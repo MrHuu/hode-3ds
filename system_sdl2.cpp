@@ -16,15 +16,15 @@ static const char *kIconBmp = "icon.bmp";
 static bool axis[4]= { false, false, false, false };
 #endif
 
-static int _scalerMultiplier = 3;
-static const Scaler *_scaler = &scaler_xbr;
+static int _scalerMultiplier = 1;
+static const Scaler *_scaler = &scaler_nearest;
 
 static const struct {
 	const char *name;
 	const Scaler *scaler;
 } _scalers[] = {
 	{ "nearest", &scaler_nearest },
-	{ "xbr", &scaler_xbr },
+	{ "xbr", &scaler_nearest }, //FIX THIS!!!
 	{ 0, 0 }
 };
 
@@ -42,21 +42,30 @@ struct System_SDL2 : System {
 
 	uint8_t *_offscreenLut;
 	uint32_t *_offscreenRgb;
+#ifdef _3DS
+	SDL_Surface *screen;
+	SDL_Surface *_texture;
+	SDL_Surface *_backgroundTexture; // YUV (PSX)
+	SDL_Surface *_widescreenTexture;
+#else
 	SDL_Window *_window;
 	SDL_Renderer *_renderer;
+	SDL_PixelFormat *_fmt;
 	SDL_Texture *_texture;
 	SDL_Texture *_backgroundTexture; // YUV (PSX)
+	SDL_Texture *_widescreenTexture;
+	SDL_GameController *_controller;
+#endif
 	int _texW, _texH;
-	SDL_PixelFormat *_fmt;
 	uint32_t _pal[256];
 	int _screenW, _screenH;
 	int _shakeDx, _shakeDy;
-	SDL_Texture *_widescreenTexture;
+
 	KeyMapping _keyMappings[kKeyMappingsSize];
 	int _keyMappingsCount;
 	AudioCallback _audioCb;
 	uint8_t _gammaLut[256];
-	SDL_GameController *_controller;
+
 	SDL_Joystick *_joystick;
 
 	System_SDL2();
@@ -92,6 +101,7 @@ struct System_SDL2 : System {
 static System_SDL2 system_sdl2;
 System *const g_system = &system_sdl2;
 
+#ifndef _3DS
 System_SDL2::System_SDL2() :
 	_offscreenLut(0), _offscreenRgb(0),
 	_window(0), _renderer(0), _texture(0), _backgroundTexture(0), _fmt(0), _widescreenTexture(0),
@@ -100,10 +110,25 @@ System_SDL2::System_SDL2() :
 		_gammaLut[i] = i;
 	}
 }
+#else
+System_SDL2::System_SDL2() :
+	_offscreenLut(0), _offscreenRgb(0),
+	 _texture(0), _backgroundTexture(0), _widescreenTexture(0),
+	_joystick(0) {
+	for (int i = 0; i < 256; ++i) {
+		_gammaLut[i] = i;
+	}
+}
+#endif
 
 void System_SDL2::init(const char *title, int w, int h, bool fullscreen, bool widescreen, bool yuv) {
+#ifndef _3DS
 	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER);
 	SDL_ShowCursor(SDL_DISABLE);
+#else
+	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK);
+	SDL_ShowCursor(SDL_DISABLE);
+#endif
 	setupDefaultKeyMappings();
 	memset(&inp, 0, sizeof(inp));
 	memset(&pad, 0, sizeof(pad));
@@ -122,12 +147,18 @@ void System_SDL2::init(const char *title, int w, int h, bool fullscreen, bool wi
 	}
 	memset(_offscreenLut, 0, offscreenSize);
 	prepareScaledGfx(title, fullscreen, widescreen, yuv);
+
 	_joystick = 0;
+#ifndef _3DS
 	_controller = 0;
+#endif
 	const int count = SDL_NumJoysticks();
 	if (count > 0) {
+#ifndef _3DS
 		SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt");
+#endif
 		for (int i = 0; i < count; ++i) {
+#ifndef _3DS
 			if (SDL_IsGameController(i)) {
 				_controller = SDL_GameControllerOpen(i);
 				if (_controller) {
@@ -135,11 +166,14 @@ void System_SDL2::init(const char *title, int w, int h, bool fullscreen, bool wi
 					break;
 				}
 			}
+#endif
 			_joystick = SDL_JoystickOpen(i);
+#ifndef _3DS
 			if (_joystick) {
 				fprintf(stdout, "Using joystick '%s'", SDL_JoystickName(_joystick));
 				break;
 			}
+#endif
 		}
 	}
 }
@@ -149,7 +183,7 @@ void System_SDL2::destroy() {
 	_offscreenLut = 0;
 	free(_offscreenRgb);
 	_offscreenRgb = 0;
-
+#ifndef _3DS
 	if (_fmt) {
 		SDL_FreeFormat(_fmt);
 		_fmt = 0;
@@ -183,6 +217,7 @@ void System_SDL2::destroy() {
 		SDL_JoystickClose(_joystick);
 		_joystick = 0;
 	}
+#endif
 	SDL_Quit();
 }
 
@@ -259,6 +294,7 @@ void System_SDL2::copyRectWidescreen(int w, int h, const uint8_t *buf, const uin
 	assert(w == _screenW && h == _screenH);
 	void *ptr = 0;
 	int pitch = 0;
+	#ifndef _3DS
 	if (SDL_LockTexture(_widescreenTexture, 0, &ptr, &pitch) == 0) {
 		assert((pitch & 3) == 0);
 
@@ -283,6 +319,26 @@ void System_SDL2::copyRectWidescreen(int w, int h, const uint8_t *buf, const uin
 
 		SDL_UnlockTexture(_widescreenTexture);
 	}
+#else
+		uint32_t *src = (uint32_t *)malloc(w * h * sizeof(uint32_t));
+		uint32_t *tmp = (uint32_t *)malloc(w * h * sizeof(uint32_t));
+		uint32_t *dst = (uint32_t *)_widescreenTexture->pixels;
+
+		if (src && tmp) {
+			for (int i = 0; i < w * h; ++i) {
+				const uint8_t color = buf[i];
+				src[i] = SDL_MapRGB(screen->format, _gammaLut[pal[color * 3]], _gammaLut[pal[color * 3 + 1]], _gammaLut[pal[color * 3 + 2]]);
+			}
+			static const int radius = 8;
+			// horizontal pass
+			blur<false>(radius, src, w, w, h, screen->format, tmp, w);
+			// vertical pass
+			blur<true>(radius, tmp, w, w, h, screen->format, dst, pitch / sizeof(uint32_t));
+		}
+
+		free(src);
+		free(tmp);
+#endif
 }
 
 void System_SDL2::setScaler(const char *name, int multiplier) {
@@ -321,7 +377,11 @@ void System_SDL2::setPalette(const uint8_t *pal, int n, int depth) {
 		r = _gammaLut[r];
 		g = _gammaLut[g];
 		b = _gammaLut[b];
+#ifndef _3DS
 		_pal[i] = SDL_MapRGB(_fmt, r, g, b);
+#else
+		_pal[i] = SDL_MapRGB(screen->format, r, g, b);
+#endif
 	}
 	if (_backgroundTexture) {
 		_pal[0] = 0;
@@ -339,7 +399,9 @@ void System_SDL2::copyRect(int x, int y, int w, int h, const uint8_t *buf, int p
 
 void System_SDL2::copyYuv(int w, int h, const uint8_t *y, int ypitch, const uint8_t *u, int upitch, const uint8_t *v, int vpitch) {
 	if (_backgroundTexture) {
+#ifndef _3DS
 		SDL_UpdateYUVTexture(_backgroundTexture, 0, y, ypitch, u, upitch, v, vpitch);
+#endif
 	}
 }
 
@@ -367,13 +429,19 @@ static void clearScreen(uint32_t *dst, int dstPitch, int x, int y, int w, int h)
 void System_SDL2::updateScreen(bool drawWidescreen) {
 	void *texturePtr = 0;
 	int texturePitch = 0;
+#ifndef _3DS
 	if (SDL_LockTexture(_texture, 0, &texturePtr, &texturePitch) != 0) {
 		return;
 	}
+	uint32_t *dst = (uint32_t *)texturePtr;
+#else
+	texturePitch = _texture->pitch;
+	uint32_t *dst = (uint32_t *)_texture->pixels;
+#endif
 	int w = _screenW;
 	int h = _screenH;
 	const uint8_t *src = _offscreenLut;
-	uint32_t *dst = (uint32_t *)texturePtr;
+	
 	assert((texturePitch & 3) == 0);
 	const int dstPitch = texturePitch / sizeof(uint32_t);
 	const int srcPitch = _screenW;
@@ -397,13 +465,18 @@ void System_SDL2::updateScreen(bool drawWidescreen) {
 			src -= _shakeDx;
 		}
 	}
+
 	uint32_t *p = (_scalerMultiplier == 1) ? dst : _offscreenRgb;
+
 	for (int i = 0; i < w * h; ++i) {
+
 		p[i] = _pal[src[i]];
 	}
 	if (_scalerMultiplier != 1) {
 		_scaler->scale(_scalerMultiplier, dst, dstPitch, _offscreenRgb, srcPitch, w, h);
 	}
+
+#ifndef _3DS
 	SDL_UnlockTexture(_texture);
 
 	SDL_RenderClear(_renderer);
@@ -432,10 +505,30 @@ void System_SDL2::updateScreen(bool drawWidescreen) {
 	}
 	SDL_RenderPresent(_renderer);
 	_shakeDx = _shakeDy = 0;
+#else
+if (_widescreenTexture) {
+		if (drawWidescreen) {
+			SDL_BlitSurface(_widescreenTexture, NULL, _texture, NULL);
+		}
+		/*
+		SDL_Rect r;
+		r.x = _shakeDx * _scalerMultiplier;
+		r.y = _shakeDy * _scalerMultiplier;
+		SDL_RenderGetLogicalSize(_renderer, &r.w, &r.h);
+		r.x += (r.w - _texW) / 2;
+		r.w = _texW;
+		r.y += (r.h - _texH) / 2;
+		r.h = _texH;*/
+		SDL_BlitSurface(_texture, NULL, screen, NULL);
+	} else {
+		SDL_BlitSurface(_texture, NULL, screen, NULL);
+	}
+	SDL_Flip(screen);
+#endif
 }
 
 void System_SDL2::processEvents() {
-	SDL_Event ev;
+SDL_Event ev;
 	pad.prevMask = pad.mask;
 	while (SDL_PollEvent(&ev)) {
 		switch (ev.type) {
@@ -488,7 +581,7 @@ void System_SDL2::processEvents() {
 			if (_joystick) {
 				const bool pressed = (ev.jbutton.state == SDL_PRESSED);
 				switch (ev.jbutton.button) {
-				case 0:
+				case 3:
 					if (pressed) {
 						pad.mask |= SYS_INP_RUN;
 					} else {
@@ -506,12 +599,27 @@ void System_SDL2::processEvents() {
 					if (pressed) {
 						pad.mask |= SYS_INP_SHOOT;
 					} else {
-						pad.mask &= ~SYS_INP_SHOOT;
+						pad.mask &= ~SYS_INP_SHOOT; 
+					}
+					break;
+				case 4:
+					if (pressed) {
+						pad.mask |= SYS_INP_SHOOT | SYS_INP_RUN;
+					} else {
+						pad.mask &= ~SYS_INP_SHOOT & ~SYS_INP_RUN;
+					}
+					break;
+				case 5:
+					if (pressed) {
+						pad.mask |= SYS_INP_ESC;
+					} else {
+						pad.mask &= ~SYS_INP_ESC;
 					}
 					break;
 				}
 			}
 			break;
+#ifndef _3DS
 		case SDL_CONTROLLERAXISMOTION:
 			if (_controller) {
 				switch (ev.caxis.axis) {
@@ -604,11 +712,6 @@ void System_SDL2::processEvents() {
 					}
 					break;
 				case SDL_CONTROLLER_BUTTON_Y:
-					if (pressed) {
-						pad.mask |= SYS_INP_SHOOT | SYS_INP_RUN;
-					} else {
-						pad.mask &= ~SYS_INP_SHOOT & ~SYS_INP_RUN;
-					}
 					break;
 				case SDL_CONTROLLER_BUTTON_BACK:
 					inp.skip = pressed;
@@ -647,6 +750,7 @@ void System_SDL2::processEvents() {
 				}
 			}
 			break;
+#endif
 		case SDL_QUIT:
 			inp.quit = true;
 			break;
@@ -670,21 +774,23 @@ static void mixAudioS16(void *param, uint8_t *buf, int len) {
 	stub->_audioCb.proc(stub->_audioCb.userdata, (int16_t *)buf, len / 2);
 }
 
-void System_SDL2::startAudio(AudioCallback callback) {
+void System_SDL2::startAudio(AudioCallback callback) { //fix audio
+	//SDL_InitSubSystem(SDL_INIT_AUDIO);
 	SDL_AudioSpec desired;
 	memset(&desired, 0, sizeof(desired));
 	desired.freq = kAudioHz;
-	desired.format = AUDIO_S16SYS;
+	desired.format = AUDIO_S16;//AUDIO_S16SYS;
 	desired.channels = 2;
 	desired.samples = 4096;
 	desired.callback = mixAudioS16;
 	desired.userdata = this;
+
 	if (SDL_OpenAudio(&desired, 0) == 0) {
 		_audioCb = callback;
 		SDL_PauseAudio(0);
-	} else {
-		error("System_SDL2::startAudio() Unable to open sound device");
-	}
+	}// else {
+	//	error("System_SDL2::startAudio() Unable to open sound device");
+	//}
 }
 
 void System_SDL2::stopAudio() {
@@ -730,6 +836,8 @@ void System_SDL2::addKeyMapping(int key, uint8_t mask) {
 void System_SDL2::setupDefaultKeyMappings() {
 	_keyMappingsCount = 0;
 	memset(_keyMappings, 0, sizeof(_keyMappings));
+#ifndef _3DS
+
 
 	/* original key mappings of the PC version */
 
@@ -752,9 +860,12 @@ void System_SDL2::setupDefaultKeyMappings() {
 	addKeyMapping(SDL_SCANCODE_D,        SYS_INP_SHOOT | SYS_INP_RUN);
 	addKeyMapping(SDL_SCANCODE_SPACE,    SYS_INP_SHOOT | SYS_INP_RUN);
 	addKeyMapping(SDL_SCANCODE_ESCAPE,   SYS_INP_ESC);
+#endif
 }
 
+
 void System_SDL2::updateKeys(PlayerInput *inp) {
+#ifndef _3DS
 	inp->prevMask = inp->mask;
 	inp->mask = 0;
 	const uint8_t *keyState = SDL_GetKeyboardState(NULL);
@@ -765,9 +876,15 @@ void System_SDL2::updateKeys(PlayerInput *inp) {
 		}
 	}
 	inp->mask |= pad.mask;
+#else
+	inp->prevMask = inp->mask;
+	inp->mask = 0;
+	inp->mask |= pad.mask;
+#endif
 }
 
 void System_SDL2::prepareScaledGfx(const char *caption, bool fullscreen, bool widescreen, bool yuv) {
+	#ifndef _3DS
 	int flags = 0;
 	if (fullscreen) {
 		flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
@@ -803,4 +920,23 @@ void System_SDL2::prepareScaledGfx(const char *caption, bool fullscreen, bool wi
 		_backgroundTexture = 0;
 	}
 	_fmt = SDL_AllocFormat(pixelFormat);
+#else
+
+	widescreen = false;
+	_texW = _screenW * _scalerMultiplier;
+	_texH = _screenH * _scalerMultiplier;
+
+	const int windowW = widescreen ? _texH * 5 / 3 : _texW;
+	const int windowH = _texH;
+
+	screen = SDL_SetVideoMode(260,200,24,SDL_FULLSCREEN|SDL_HWPALETTE);
+	_texture = SDL_CreateRGBSurface(0,_texW,_texH,32,0,0,0,0);
+
+	if (widescreen) {
+		_widescreenTexture = SDL_CreateRGBSurface(0,_screenW,_screenH,32,0,0,0,0);
+	} else {
+		_widescreenTexture = 0;
+	}
+
+#endif
 }

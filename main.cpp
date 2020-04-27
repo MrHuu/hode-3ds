@@ -6,9 +6,15 @@
 #include <SDL.h>
 #include <getopt.h>
 #include <sys/stat.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#ifdef _3DS
+#include <3ds.h>
+
+#endif
 
 #include "3p/inih/ini.h"
-
 #include "game.h"
 #include "menu.h"
 #include "mixer.h"
@@ -17,6 +23,13 @@
 #include "resource.h"
 #include "system.h"
 #include "video.h"
+/*
+extern "C" {
+#include "3p/console/console.h"
+
+}
+*/
+
 
 #ifdef __SWITCH__
 #include <switch.h>
@@ -26,6 +39,9 @@ static const char *_title = "Heart of Darkness";
 
 #ifdef __vita__
 static const char *_configIni = "ux0:data/hode/hode.ini";
+#endif
+#ifdef _3DS
+static const char *_configIni = "hode.ini";
 #else
 static const char *_configIni = "hode.ini";
 #endif
@@ -39,7 +55,7 @@ static const char *_usage =
 	"  --checkpoint=NUM  Start at checkpoint NUM\n"
 ;
 
-static bool _fullscreen = false;
+static bool _fullscreen = true;
 static bool _widescreen = false;
 
 static const bool _runBenchmark = false;
@@ -128,17 +144,42 @@ static int handleConfigIni(void *userdata, const char *section, const char *name
 }
 
 int main(int argc, char *argv[]) {
+	
 #ifdef __SWITCH__
 	socketInitializeDefault();
 	nxlinkStdio();
 #endif
-#ifdef __vita__
+#ifdef _3DS
+	//romfsInit();
+	//acInit();
+  fsInit();
+  gfxInitDefault();
+	consoleInit(GFX_BOTTOM,NULL);
+
+	//aptInit()
+
+#endif
+/*#ifdef __vita__
 	const char *dataPath = "ux0:data/hode";
 	const char *savePath = "ux0:data/hode";
+
+*/
+#ifdef _3DS
+	const char *dataPath = "data";
+	const char *savePath = "save";
 #else
-	char *dataPath = 0;
-	char *savePath = 0;
+
+
+
+	char *dataPath = "data";
+	char *savePath = "save";
 #endif
+
+#ifdef _3DS
+  //FILE *fp = freopen("/ftpd.log", "wb", stderr);
+
+#endif
+	printf("1");
 	int level = 0;
 	int checkpoint = 0;
 	bool resume = true; // resume game from 'setup.cfg'
@@ -153,7 +194,11 @@ int main(int argc, char *argv[]) {
 			dataPath = strdup(argv[1]);
 		}
 	}
-	while (1) {
+
+printf("1");
+#ifndef _3DS
+	while (1) { //rewrite with static datapath,savePath osv
+
 		static struct option options[] = {
 			{ "datapath",   required_argument, 0, 1 },
 			{ "savepath",   required_argument, 0, 2 },
@@ -164,6 +209,8 @@ int main(int argc, char *argv[]) {
 			{ 0, 0, 0, 0 },
 		};
 		int index;
+
+
 		const int c = getopt_long(argc, argv, "", options, &index);
 		if (c == -1) {
 			break;
@@ -203,24 +250,38 @@ int main(int argc, char *argv[]) {
 			return -1;
 		}
 	}
-	Game *g = new Game(dataPath ? dataPath : _defaultDataPath, savePath ? savePath : _defaultSavePath, cheats);
+#endif
+
+#ifdef _3DS
+	printf("2");
+	Game *g = new Game(dataPath, savePath, cheats);
+#else
+  Game *g = new Game(dataPath ? dataPath : _defaultDataPath, savePath ? savePath : _defaultSavePath, cheats);
+#endif
 	ini_parse(_configIni, handleConfigIni, g);
 	if (_runBenchmark) {
 		g->benchmarkCpu();
 	}
+
 	// load setup.dat and detects if these are PC or PSX datafiles
 	g->_res->loadSetupDat();
 	const bool isPsx = g->_res->_isPsx;
 	g_system->init(_title, Video::W, Video::H, _fullscreen, _widescreen, isPsx);
+
 	setupAudio(g);
+
 	g->loadSetupCfg(resume);
 	bool runGame = true;
 	g->_video->init(isPsx);
+	printf("3");
 	if (_runMenu && resume && !isPsx) {
 		Menu *m = new Menu(g, g->_paf, g->_res, g->_video);
+
+		//u64 time_taken = ((double)start)/1000000;
 		runGame = m->mainLoop();
 		delete m;
 	}
+
 	if (runGame && !g_system->inp.quit) {
 		bool levelChanged = false;
 		do {
@@ -239,11 +300,17 @@ int main(int argc, char *argv[]) {
 	g_system->destroy();
 	delete g;
 #ifndef __vita__
+#ifndef _3DS
 	free(dataPath);
 	free(savePath);
 #endif
+#endif
 #ifdef __SWITCH__
 	socketExit();
+#endif
+#ifdef _3DS
+fsExit ();
+gfxExit();
 #endif
 	return 0;
 }

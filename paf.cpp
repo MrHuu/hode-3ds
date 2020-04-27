@@ -479,10 +479,33 @@ void PafPlayer::mainLoop() {
 
 	const uint32_t framesPerSec = (_demuxAudioFrameBlocks != 0) ? kFramesPerSec : 15;
 	uint32_t frameTime = g_system->getTimeStamp() + 1000 / framesPerSec;
-
+	
 	for (int i = 0; i < (int)_pafHdr.framesCount; ++i) {
 		// read buffering blocks
 		uint32_t blocksCountForFrame = (i == 0) ? _pafHdr.preloadFrameBlocksCount : _pafHdr.frameBlocksCountTable[i - 1];
+		#ifdef _3DS
+		printf("frametime= %lu \n",_pafHdr.readBufferSize);
+		int blocksize = _pafHdr.readBufferSize*blocksCountForFrame;
+		uint8_t* betterbuffer = (uint8_t*)malloc(blocksize);
+		_file.read(betterbuffer,blocksize);
+		int counter =0;
+		while (blocksCountForFrame != 0) {
+			
+			const uint32_t dstOffset = _pafHdr.frameBlocksOffsetTable[currentFrameBlock] & ~(1 << 31);
+			if (_pafHdr.frameBlocksOffsetTable[currentFrameBlock] & (1 << 31)) {
+				assert(dstOffset + _pafHdr.readBufferSize <= _pafHdr.maxAudioFrameBlocksCount * _pafHdr.readBufferSize);
+				memcpy(_demuxAudioFrameBlocks + dstOffset, &betterbuffer[counter*_pafHdr.readBufferSize], _pafHdr.readBufferSize);
+				decodeAudioFrame(_demuxAudioFrameBlocks, dstOffset, _pafHdr.readBufferSize);
+			} else {
+				assert(dstOffset + _pafHdr.readBufferSize <= _pafHdr.maxVideoFrameBlocksCount * _pafHdr.readBufferSize);
+				memcpy(_demuxVideoFrameBlocks + dstOffset, &betterbuffer[counter*_pafHdr.readBufferSize], _pafHdr.readBufferSize);
+			}
+			++currentFrameBlock;
+			--blocksCountForFrame;
+			++counter;
+		}
+		#else
+		printf("frametime= %lu \n",_pafHdr.readBufferSize);
 		while (blocksCountForFrame != 0) {
 			_file.read(_bufferBlock, _pafHdr.readBufferSize);
 			const uint32_t dstOffset = _pafHdr.frameBlocksOffsetTable[currentFrameBlock] & ~(1 << 31);
@@ -497,6 +520,8 @@ void PafPlayer::mainLoop() {
 			++currentFrameBlock;
 			--blocksCountForFrame;
 		}
+		#endif
+
 		// decode video data
 		decodeVideoFrame(_demuxVideoFrameBlocks + _pafHdr.framesOffsetTable[i]);
 		g_system->setPalette(_paletteBuffer, 256, 6);
@@ -506,6 +531,9 @@ void PafPlayer::mainLoop() {
 		if (g_system->inp.keyPressed(SYS_INP_ESC) || g_system->inp.skip) {
 			break;
 		}
+		#ifdef _3DS
+		free(betterbuffer);
+		#endif
 
 		const int delay = MAX<int>(10, frameTime - g_system->getTimeStamp());
 		g_system->sleep(delay);
@@ -514,6 +542,7 @@ void PafPlayer::mainLoop() {
 		// set next decoding video page
 		++_currentPageBuffer;
 		_currentPageBuffer &= 3;
+		
 	}
 
 	// restore audio callback
@@ -522,4 +551,5 @@ void PafPlayer::mainLoop() {
 	}
 
 	unload();
+
 }

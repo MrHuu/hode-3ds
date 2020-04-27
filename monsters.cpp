@@ -7,7 +7,12 @@
 #include "level.h"
 #include "resource.h"
 #include "util.h"
+#ifdef _3DS
+#include <3ds.h>
+#endif
 
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#define MAX(a,b) (((a)>(b))?(a):(b))
 // (lut[x] & 1) indicates a diagonal direction
 static const uint8_t _mstLut1[] = {
 	// 0
@@ -1550,7 +1555,7 @@ void Game::mstMonster1MoveTowardsGoal1(MonsterObject1 *m) {
 			const MstWalkBox *m34 = &_res->_mstWalkBoxData[walkNode->walkBox];
 			if (rect_contains(m34->left, m34->top, m34->right, m34->bottom, _xMstPos1, _yMstPos1)) {
 				inWalkBox = true;
-				
+
 			}
 		}
 		if (!inWalkBox) {
@@ -3893,7 +3898,7 @@ int Game::mstTask_main(Task *t) {
 		case 56: { // 34 - arith_task_var_task_var
 				assert(p[1] < kMaxLocals);
 				assert(p[2] < kMaxLocals);
-				arithOp(p[0] - 47, &t->localVars[p[1]], t->localVars[p[2]]);
+				arithOp(p[0] - 47, (int*)&t->localVars[p[1]], t->localVars[p[2]]); //TODO: might be wrong fix
 			}
 			break;
 		case 57:
@@ -3908,7 +3913,7 @@ int Game::mstTask_main(Task *t) {
 		case 66: { // 35 - arith_global_var_task_var
 				assert(p[1] < kMaxVars);
 				assert(p[2] < kMaxLocals);
-				arithOp(p[0] - 57, &_mstVars[p[1]], t->localVars[p[2]]);
+				arithOp(p[0] - 57, (int*)&_mstVars[p[1]], t->localVars[p[2]]); //TODO: might be wrong fix
 				if (p[1] == 31 && _mstVars[31] > 0) {
 					_mstTickDelay = _mstVars[31];
 				}
@@ -3933,7 +3938,7 @@ int Game::mstTask_main(Task *t) {
 				if (m) {
 					assert(p[1] < kMaxLocals);
 					assert(p[2] < kMaxLocals);
-					arithOp(p[0] - 67, &m->localVars[p[1]], t->localVars[p[2]]);
+					arithOp(p[0] - 67, (int*)&m->localVars[p[1]], t->localVars[p[2]]);
 				}
 			}
 			break;
@@ -3956,7 +3961,7 @@ int Game::mstTask_main(Task *t) {
 				if (m) {
 					assert(p[1] < kMaxLocals);
 					assert(p[2] < kMaxLocals);
-					arithOp(p[0] - 77, &t->localVars[p[1]], m->localVars[p[2]]);
+					arithOp(p[0] - 77, (int*)&t->localVars[p[1]], m->localVars[p[2]]);
 				}
 			}
 			break;
@@ -3979,7 +3984,7 @@ int Game::mstTask_main(Task *t) {
 				if (m) {
 					assert(p[1] < kMaxVars);
 					assert(p[2] < kMaxLocals);
-					arithOp(p[0] - 87, &_mstVars[p[1]], m->localVars[p[2]]);
+					arithOp(p[0] - 87, (int*)&_mstVars[p[1]], m->localVars[p[2]]);
 					if (p[1] == 31 && _mstVars[31] > 0) {
 						_mstTickDelay = _mstVars[31];
 					}
@@ -4005,7 +4010,7 @@ int Game::mstTask_main(Task *t) {
 				if (m) {
 					assert(p[1] < kMaxLocals);
 					assert(p[2] < kMaxLocals);
-					arithOp(p[0] - 97, &m->localVars[p[1]], m->localVars[p[2]]);
+					arithOp(p[0] - 97, (int*)&m->localVars[p[1]], m->localVars[p[2]]);
 				}
 			}
 			break;
@@ -4021,7 +4026,7 @@ int Game::mstTask_main(Task *t) {
 		case 116: { // 40
 				assert(p[1] < kMaxLocals);
 				assert(p[2] < kMaxVars);
-				arithOp(p[0] - 107, &t->localVars[p[1]], _mstVars[p[2]]);
+				arithOp(p[0] - 107, (int*)&t->localVars[p[1]], _mstVars[p[2]]);
 			}
 			break;
 		case 117:
@@ -4036,7 +4041,7 @@ int Game::mstTask_main(Task *t) {
 		case 126: { // 41
 				assert(p[1] < kMaxVars);
 				assert(p[2] < kMaxVars);
-				arithOp(p[0] - 117, &_mstVars[p[1]], _mstVars[p[2]]);
+				arithOp(p[0] - 117, (int*)&_mstVars[p[1]], _mstVars[p[2]]);
 				if (p[1] == 31 && _mstVars[31] > 0) {
 					_mstTickDelay = _mstVars[31];
 				}
@@ -4061,7 +4066,7 @@ int Game::mstTask_main(Task *t) {
 				if (m) {
 					assert(p[1] < kMaxLocals);
 					assert(p[2] < kMaxVars);
-					arithOp(p[0] - 127, &m->localVars[p[1]], _mstVars[p[2]]);
+					arithOp(p[0] - 127, (int*)&m->localVars[p[1]], _mstVars[p[2]]);
 				}
 			}
 			break;
@@ -4077,7 +4082,7 @@ int Game::mstTask_main(Task *t) {
 		case 146: { // 43
 				const int num = p[2];
 				assert(p[1] < kMaxLocals);
-				arithOp(p[0] - 137, &t->localVars[p[1]], getTaskOtherVar(num, t));
+				arithOp(p[0] - 137, (int*)&t->localVars[p[1]], getTaskOtherVar(num, t));
 			}
 			break;
 		case 147:
@@ -4092,7 +4097,7 @@ int Game::mstTask_main(Task *t) {
 		case 156: { // 44
 				const int num = p[2];
 				assert(p[1] < kMaxVars);
-				arithOp(p[0] - 147, &_mstVars[p[1]], getTaskOtherVar(num, t));
+				arithOp(p[0] - 147, (int*)&_mstVars[p[1]], getTaskOtherVar(num, t));
 				if (p[1] == 31 && _mstVars[31] > 0) {
 					_mstTickDelay = _mstVars[31];
 				}
@@ -4117,7 +4122,7 @@ int Game::mstTask_main(Task *t) {
 				if (m) {
 					const int num = p[2];
 					assert(p[1] < kMaxLocals);
-					arithOp(p[0] - 157, &m->localVars[p[1]], getTaskOtherVar(num, t));
+					arithOp(p[0] - 157, (int*)&m->localVars[p[1]], getTaskOtherVar(num, t));
 				}
 			}
 			break;
@@ -4133,7 +4138,7 @@ int Game::mstTask_main(Task *t) {
 		case 176: { // 46
 				const int16_t num = READ_LE_UINT16(p + 2);
 				assert(p[1] < kMaxLocals);
-				arithOp(p[0] - 167, &t->localVars[p[1]], num);
+				arithOp(p[0] - 167, (int*)&t->localVars[p[1]], num);
 			}
 			break;
 		case 177:
@@ -4148,7 +4153,7 @@ int Game::mstTask_main(Task *t) {
 		case 186: { // 47
 				const int16_t num = READ_LE_UINT16(p + 2);
 				assert(p[1] < kMaxVars);
-				arithOp(p[0] - 177, &_mstVars[p[1]], num);
+				arithOp(p[0] - 177, (int*)&_mstVars[p[1]], num);
 				if (p[1] == 31 && _mstVars[31] > 0) {
 					_mstTickDelay = _mstVars[31];
 				}
@@ -4173,7 +4178,7 @@ int Game::mstTask_main(Task *t) {
 				if (m) {
 					const int16_t num = READ_LE_UINT16(p + 2);
 					assert(p[1] < kMaxLocals);
-					arithOp(p[0] - 187, &m->localVars[p[1]], num);
+					arithOp(p[0] - 187, (int*)&m->localVars[p[1]], num);
 				}
 			}
 			break;
@@ -4935,7 +4940,7 @@ int Game::mstOp49_setMovingBounds(int a, int b, int c, int d, int screen, Task *
 					m->goalDistance_y2 = -m->goalDistance_y1;
 				}
 			}
-			
+
 		}
 		break;
 	case 0: { // 0xFC
@@ -5117,7 +5122,7 @@ int Game::mstOp49_setMovingBounds(int a, int b, int c, int d, int screen, Task *
 			yDist = m49Unk1->unkD;
 		}
 		if (_xMstPos2 < xDist && _yMstPos2 < yDist && !mstMonster1TestGoalDirection(m)) {
-			
+
 		} else {
 			if (m->goalDirectionMask) {
 				return (this->*(t->run))(t);
@@ -5141,7 +5146,7 @@ int Game::mstOp49_setMovingBounds(int a, int b, int c, int d, int screen, Task *
 			} else {
 				flag = true;
 				break;
-				
+
 			}
 		}
 		if (!flag) {
@@ -5299,7 +5304,7 @@ l1:
 			}
 			vf = 1;
 			var4C = vf;
-			goto l1; 
+			goto l1;
 		}
 		//++var28;
 	}
@@ -5387,7 +5392,7 @@ l2:
 			if (var1C == 2 && var4C != 1) {
 				vd = 1;
 				var4C = 1;
-				goto l2; 
+				goto l2;
 			}
 		}
 		//++var28;
@@ -5479,7 +5484,7 @@ void Game::mstOp54() {
 					const uint32_t indexUnk48 = m43->indexUnk48[num];
 					MstMonsterAction *m48 = &_res->_mstMonsterActionData[indexUnk48];
 					if (mstUpdateInRange(m48)) {
-						break; 
+						break;
 					}
 				}
 			}

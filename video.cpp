@@ -6,6 +6,11 @@
 #include "video.h"
 #include "mdec.h"
 #include "system.h"
+#include <time.h>
+#ifdef _3DS
+#include <3ds.h>
+
+#endif
 
 static const bool kUseShadowColorLut = false;
 
@@ -100,6 +105,8 @@ void Video::clearPalette() {
 }
 
 void Video::decodeSPR(const uint8_t *src, uint8_t *dst, int x, int y, uint8_t flags, uint16_t spr_w, uint16_t spr_h) {
+
+
 	if (y >= _spr.h) {
 		return;
 	} else if (y < _spr.y) {
@@ -139,6 +146,7 @@ void Video::decodeSPR(const uint8_t *src, uint8_t *dst, int x, int y, uint8_t fl
 		if (y < _spr.y || y >= _spr.h) {
 			clippedCount = 0;
 		}
+
 		switch (code >> 6) {
 		case 0:
 			if ((flags & (kSprHorizFlip | kSprClipLeft | kSprClipRight)) == 0) {

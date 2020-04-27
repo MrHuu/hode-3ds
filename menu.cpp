@@ -318,13 +318,16 @@ void Menu::drawSprite(const DatSpritesGroup *spriteGroup, const uint8_t *ptr, ui
 	for (uint32_t i = 0; i < spriteGroup->count; ++i) {
 		const uint16_t size = READ_LE_UINT16(ptr + 2);
 		if (num == i) {
+
 			if (_res->_isPsx) {
 				_video->decodeBackgroundOverlayPsx(ptr);
 			} else {
 				_video->decodeSPR(ptr + 8, _video->_frontLayer, ptr[0], ptr[1], 0, READ_LE_UINT16(ptr + 4), READ_LE_UINT16(ptr + 6));
+
 			}
 			break;
 		}
+
 		ptr += size + 2;
 	}
 }
@@ -371,15 +374,24 @@ void Menu::refreshScreen(bool updatePalette) {
 	if (updatePalette) {
 		g_system->setPalette(_paletteBuffer, 256, 6);
 	}
+
+
 	_video->updateGameDisplay(_video->_frontLayer);
+
 	g_system->updateScreen(false);
 }
 
 bool Menu::mainLoop() {
+
 	bool ret = false;
 	loadData();
+	#ifndef _3DS
 	while (!g_system->inp.quit) {
+	#else
+	while (aptMainLoop()) {
+	#endif
 		const int option = handleTitleScreen();
+
 		if (option == kTitleScreen_AssignPlayer) {
 			handleAssignPlayer();
 			debug(kDebug_MENU, "currentPlayer %d", _config->currentPlayer);
@@ -409,15 +421,25 @@ void Menu::drawTitleScreen(int option) {
 		decodeLZW(_titleBitmapData, _video->_frontLayer);
 		g_system->setPalette(_titleBitmapData + _titleBitmapSize, 256, 6);
 	}
+
 	drawSprite(_titleSprites, (const uint8_t *)&_titleSprites[1], option);
+
 	refreshScreen(false);
+
 }
 
 int Menu::handleTitleScreen() {
 	const int firstOption = kTitleScreen_AssignPlayer;
 	const int lastOption = _res->_isPsx ? kTitleScreen_Play : kTitleScreen_Quit;
 	int currentOption = kTitleScreen_Play;
+
+
+	#ifndef _3DS
 	while (!g_system->inp.quit) {
+	#else
+	while (aptMainLoop()) {
+	#endif
+
 		g_system->processEvents();
 		if (g_system->inp.keyReleased(SYS_INP_UP)) {
 			if (currentOption > firstOption) {
@@ -425,18 +447,23 @@ int Menu::handleTitleScreen() {
 				--currentOption;
 			}
 		}
+
+
 		if (g_system->inp.keyReleased(SYS_INP_DOWN)) {
 			if (currentOption < lastOption) {
 				playSound(0x70);
 				++currentOption;
 			}
 		}
+
 		if (g_system->inp.keyReleased(SYS_INP_SHOOT) || g_system->inp.keyReleased(SYS_INP_JUMP)) {
 			playSound(0x78);
 			break;
 		}
+
 		drawTitleScreen(currentOption);
 		g_system->sleep(15);
+
 	}
 	return currentOption;
 }

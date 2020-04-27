@@ -1530,6 +1530,8 @@ void Game::setupAndyObjectMoveState() {
 }
 
 void Game::updateAndyObject(LvlObject *ptr) {
+	//u64 start ,stop, result;
+	//start = osGetTime();
 	_andyUpdatePositionFlag = false;
 	int xPos = 0;
 	int yPos = 0;
@@ -1554,6 +1556,7 @@ void Game::updateAndyObject(LvlObject *ptr) {
 	if (dat->frame != 0) {
 		setupAndyObjectMoveState();
 	}
+
 	while (count != 0) {
 		--count;
 		assert(asfh[count].move < dat->movesCount);
@@ -1577,6 +1580,7 @@ void Game::updateAndyObject(LvlObject *ptr) {
 		}
 		break;
 	}
+
 	ptr->flags0 = _andyMoveData.flags0;
 	ptr->flags1 = _andyMoveData.flags1;
 	ptr->xPos = _andyMoveData.xPos;
@@ -1619,7 +1623,7 @@ void Game::updateAndyObject(LvlObject *ptr) {
 			ptr->yPos += ptr->height - asfh->unk7 - h;
 			break;
 		}
-
+		//test1
 	} else {
 sameAnim:
 
@@ -1658,15 +1662,26 @@ sameAnim:
 			ptr->yPos -= ash->dy + dh;
 			break;
 		}
+		//test2 is below
 	}
+
 
 	ptr->anim = currentAnim;
 	ptr->frame = currentAnimFrame;
-
+	//stop = (osGetTime() -start);
+	//result = stop;
+	//if(result>3){
+	//	printf("updateAndyObject-1() took %llu ms to execute \n", result);
+	//}
 	ptr->currentSound = ash->sound;
 	if (ptr->currentSound != 0xFFFF && ptr->type == 8 && ptr->spriteNum < 5) {
-		playSound(ptr->currentSound, ptr, 0, 0);
+		playSound(ptr->currentSound, ptr, 0, 0); // this is pretty slow
 	}
+	//stop = (osGetTime() -start);
+	//result = stop;
+	//if(result>3){
+	//	printf("updateAndyObject() took %llu ms to execute \n", result);
+	//}
 
 	ptr->flags0 = merge_bits(ptr->flags0, ash->flags0, 0x3FF);
 	ptr->flags1 = merge_bits(ptr->flags1, ash->flags1, 6);
@@ -1675,9 +1690,13 @@ sameAnim:
 	ptr->currentSprite = ash->firstFrame;
 
 	ptr->bitmapBits = _res->getLvlSpriteFramePtr(dat, ash->firstFrame, &ptr->width, &ptr->height);
-
+	//stop = (osGetTime() -start);
+	//result = stop;
+	//if(result>3){
+	//	printf("updateAndyObject_2() took %llu ms to execute \n", result);
+	//}
 	LvlSprHotspotData *hs = ((LvlSprHotspotData *)dat->hotspotsData) + ash->firstFrame;
-
+	//test3 is above
 	if (_andyUpdatePositionFlag) {
 		ptr->flags1 &= ~0x30;
 	}

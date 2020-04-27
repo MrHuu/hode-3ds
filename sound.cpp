@@ -3,6 +3,7 @@
 #include "resource.h"
 #include "system.h"
 #include "util.h"
+#include "intern.h"
 
 enum {
 	kFlagPlaying = 1 << 0,
@@ -761,6 +762,7 @@ void Game::updateSssGroup2(uint32_t flags) {
 }
 
 SssObject *Game::createSoundObject(int bankIndex, int sampleIndex, uint32_t flags) {
+
 	debug(kDebug_SOUND, "createSoundObject bank %d sample %d c 0x%x", bankIndex, sampleIndex, flags);
 	SssObject *ret = 0;
 	SssBank *bank = &_res->_sssBanksData[bankIndex];
@@ -775,7 +777,7 @@ SssObject *Game::createSoundObject(int bankIndex, int sampleIndex, uint32_t flag
 			int framesCount = 0;
 			for (int i = 0; i < bank->count; ++i) {
 				if (sample->pcm != 0xFFFF) {
-					SssObject *so = startSoundObject(bankIndex, i, flags);
+					SssObject *so = startSoundObject(bankIndex, i, flags);//slow part
 					if (so && so->pcmFramesCount >= framesCount) {
 						framesCount = so->pcmFramesCount;
 						ret = so;
@@ -783,6 +785,7 @@ SssObject *Game::createSoundObject(int bankIndex, int sampleIndex, uint32_t flag
 				}
 				++sample;
 			}
+
 		} else {
 			uint32_t mask = 1 << (_rnd.update() & 31);
 			SssUnk6 *s6 = &_res->_sssDataUnk6[bankIndex];
@@ -811,7 +814,7 @@ SssObject *Game::createSoundObject(int bankIndex, int sampleIndex, uint32_t flag
 					}
 				}
 			}
-			ret = startSoundObject(bankIndex, b, flags);
+			ret = startSoundObject(bankIndex, b, flags); //slow part
 		}
 		if (ret && (bank->flags & 4) != 0) {
 			ret->nextSoundBank = bankIndex;
@@ -835,19 +838,18 @@ SssObject *Game::startSoundObject(int bankIndex, int sampleIndex, uint32_t flags
 	debug(kDebug_SOUND, "startSoundObject sample %d", sampleNum);
 	assert(sampleNum >= 0 && sampleNum < _res->_sssHdr.samplesDataCount);
 	SssSample *sample = &_res->_sssSamplesData[sampleNum];
-
+	//test1
 	// original preloads PCM when changing screens
 	SssPcm *pcm = &_res->_sssPcmTable[sample->pcm];
 	if (!pcm->ptr && !_res->_isPsx) {
 		_res->loadSssPcm(_res->_sssFile, pcm);
 	}
-
 	if (sample->framesCount != 0) {
 		SssFilter *filter = &_res->_sssFilters[bank->sssFilter];
-#ifdef __vita__
+#if defined(__vita__) || (_3DS)
 		const int priority = CLIP(filter->priorityCurrent + sample->initPriority, 0l, 7l);
 #else
-		const int priority = CLIP(filter->priorityCurrent + sample->initPriority, 0, 7);
+		const int priority = CLIP((int)filter->priorityCurrent + sample->initPriority, 0, 7);//TODO: temp fix
 #endif
 		uint32_t flags1 = flags & 0xFFF0F000;
 		flags1 |= ((sampleIndex & 0xF) << 16) | (bankIndex & 0xFFF);
@@ -889,7 +891,9 @@ SssObject *Game::startSoundObject(int bankIndex, int sampleIndex, uint32_t flags
 			}
 			setSoundObjectPanning(so);
 			if (so->pcm) {
-				updateSoundObject(so);
+				
+				updateSoundObject(so); //not that slow
+
 				return so;
 			}
 		}
@@ -913,9 +917,11 @@ SssObject *Game::startSoundObject(int bankIndex, int sampleIndex, uint32_t flags
 	}
 	updateSssGroup2(flags);
 	return 0;
+
 }
 
 void Game::playSoundObject(SssInfo *s, int source, int mask) {
+
 	debug(kDebug_SOUND, "playSoundObject num %d lut 0x%x mask 0x%x", s->sssBankIndex, source, mask);
 	if (_sssDisabled) {
 		return;
@@ -995,7 +1001,8 @@ void Game::playSoundObject(SssInfo *s, int source, int mask) {
 			}
 		}
 	}
-	createSoundObject(s->sssBankIndex, s->sampleIndex, ve);
+	createSoundObject(s->sssBankIndex, s->sampleIndex, ve); //slow part
+
 }
 
 void Game::clearSoundObjects() {
@@ -1058,7 +1065,7 @@ void Game::setSoundObjectPanning(SssObject *so) {
 		int volume = ((so->filter->volumeCurrent >> 16) * so->volume) >> 7;
 		int panning = 0;
 		if (so->panningPtr) {
-#ifdef __vita__
+#if  defined(__vita__) || defined(_3DS)
 			int priority = CLIP(so->priority + so->filter->priorityCurrent, 0l, 7l);
 #else
 			int priority = CLIP(so->priority + so->filter->priorityCurrent, 0, 7);
@@ -1068,7 +1075,7 @@ void Game::setSoundObjectPanning(SssObject *so) {
 				panning = kDefaultSoundPanning;
 				priority = 0;
 			} else {
-#ifdef __vita__
+#if defined(__vita__) || defined(_3DS)
 				panning = CLIP(so->panning, 0l, 128l);
 #else
 				panning = CLIP(so->panning, 0, 128);
@@ -1083,7 +1090,7 @@ void Game::setSoundObjectPanning(SssObject *so) {
 				}
 			}
 		} else {
-#ifdef __vita__
+#if  defined(__vita__) || defined(_3DS)
 			panning = CLIP(so->panning + (so->filter->panningCurrent >> 16), 0l, 128l);
 #else
 			panning = CLIP(so->panning + (so->filter->panningCurrent >> 16), 0, 128);
