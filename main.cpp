@@ -11,7 +11,7 @@
 #include <time.h>
 #ifdef _3DS
 #include <3ds.h>
-
+#include <unistd.h>
 #endif
 
 #include "3p/inih/ini.h"
@@ -41,7 +41,7 @@ static const char *_title = "Heart of Darkness";
 static const char *_configIni = "ux0:data/hode/hode.ini";
 #endif
 #ifdef _3DS
-static const char *_configIni = "hode.ini";
+static const char *_configIni = "sdmc:/3ds/hode/hode.ini";
 #else
 static const char *_configIni = "hode.ini";
 #endif
@@ -150,11 +150,14 @@ int main(int argc, char *argv[]) {
 	nxlinkStdio();
 #endif
 #ifdef _3DS
+
+osSetSpeedupEnable(true);
+
 	//romfsInit();
 	//acInit();
-  fsInit();
+//  fsInit();
   gfxInitDefault();
-	consoleInit(GFX_BOTTOM,NULL);
+//	consoleInit(GFX_BOTTOM,NULL);
 
 	//aptInit()
 
@@ -165,8 +168,15 @@ int main(int argc, char *argv[]) {
 
 */
 #ifdef _3DS
-	const char *dataPath = "data";
-	const char *savePath = "save";
+	chdir("sdmc:/3ds/hode");
+#ifdef CTR_ROMFS
+	romfsInit();
+	const char *dataPath = "romfs:/data";
+#else
+	const char *dataPath = "./data";
+#endif
+	const char *savePath = "./save";
+	//	const char *savePath = "sdmc:/3ds/hode/save";
 #else
 
 
@@ -179,7 +189,7 @@ int main(int argc, char *argv[]) {
   //FILE *fp = freopen("/ftpd.log", "wb", stderr);
 
 #endif
-	printf("1");
+//	printf("1");
 	int level = 0;
 	int checkpoint = 0;
 	bool resume = true; // resume game from 'setup.cfg'
@@ -195,7 +205,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-printf("1");
+//printf("1");
 #ifndef _3DS
 	while (1) { //rewrite with static datapath,savePath osv
 
@@ -253,7 +263,7 @@ printf("1");
 #endif
 
 #ifdef _3DS
-	printf("2");
+//	printf("2");
 	Game *g = new Game(dataPath, savePath, cheats);
 #else
   Game *g = new Game(dataPath ? dataPath : _defaultDataPath, savePath ? savePath : _defaultSavePath, cheats);
@@ -273,7 +283,7 @@ printf("1");
 	g->loadSetupCfg(resume);
 	bool runGame = true;
 	g->_video->init(isPsx);
-	printf("3");
+//	printf("3");
 	if (_runMenu && resume && !isPsx) {
 		Menu *m = new Menu(g, g->_paf, g->_res, g->_video);
 
@@ -309,7 +319,9 @@ printf("1");
 	socketExit();
 #endif
 #ifdef _3DS
-fsExit ();
+#ifdef CTR_ROMFS
+romfsExit();
+#endif
 gfxExit();
 #endif
 	return 0;
