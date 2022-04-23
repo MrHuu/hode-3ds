@@ -42,7 +42,9 @@ enum {
 	kCheatOneHitPlasmaCannon = 1 << 1,
 	kCheatOneHitSpecialPowers = 1 << 2,
 	kCheatWalkOnLava = 1 << 3,
-	kCheatGateNoCrush = 1 << 4
+	kCheatGateNoCrush = 1 << 4,
+	kCheatLavaNoHit = 1 << 5,
+	kCheatRockShadowNoHit = 1 << 6
 };
 
 struct Game {
@@ -61,9 +63,7 @@ struct Game {
 		kMaxBoundingBoxes = 64,
 
 		kDefaultSoundPanning = 64,
-		kDefaultSoundVolume = 128,
-
-		kFrameTimeStamp = 50 // original is 80ms (12.5hz)
+		kDefaultSoundVolume = 128
 	};
 
 	static const uint8_t _specialPowersDxDyTable[];
@@ -94,9 +94,9 @@ struct Game {
 	uint32_t _cheats;
 	int _frameMs;
 	int _difficulty;
-	bool _loadingScreenEnabled;
 
 	SetupConfig _setupConfig;
+	bool _playDemo;
 	bool _resumeGame;
 
 	LvlObject *_screenLvlObjectsList[kMaxScreens]; // LvlObject linked list for each screen
@@ -161,12 +161,10 @@ struct Game {
 	bool _specialAnimFlag;
 	AndyShootData _andyShootsTable[kMaxAndyShoots];
 	int _andyShootsCount;
-	uint8_t _mstOp68_type, _mstOp68_arg9, _mstOp67_type;
-	uint8_t _mstOp67_flags1;
-	uint16_t _mstOp67_unk;
+	uint8_t _mstOp68_type, _mstOp68_flags1, _mstOp67_type, _mstOp67_flags1;
 	int _mstOp67_x1, _mstOp67_x2, _mstOp67_y1, _mstOp67_y2;
 	int8_t _mstOp67_screenNum;
-	uint16_t _mstOp68_flags1;
+	uint16_t _mstOp68_flags2;
 	int _mstOp68_x1, _mstOp68_x2, _mstOp68_y1, _mstOp68_y2;
 	int8_t _mstOp68_screenNum;
 	uint32_t _mstLevelGatesMask;
@@ -177,7 +175,6 @@ struct Game {
 	Task *_currentTask;
 	int _mstOp54Counter;
 	int _mstOp56Counter;
-	uint8_t _mstOp54Table[32];
 	bool _mstDisabled;
 	LvlObject _declaredLvlObjectsList[kMaxLvlObjects];
 	LvlObject *_declaredLvlObjectsNextPtr; // pointer to the next free entry
@@ -205,7 +202,6 @@ struct Game {
 	int _xMstPos1, _yMstPos1;
 	int _xMstPos2, _yMstPos2; // xMstDist1, yMstDist1
 	int _xMstPos3, _yMstPos3;
-	int _mstHelper1Count;
 	int _mstActionNum;
 	uint32_t _mstAndyVarMask;
 	int _mstChasingMonstersCount;
@@ -220,7 +216,7 @@ struct Game {
 	int _mstBoundingBoxesCount;
 	MstBoundingBox _mstBoundingBoxesTable[kMaxBoundingBoxes];
 	Task *_mstCurrentTask;
-	MstCollision _mstCollisionTable[2][32]; // 0:facingRight, 1:facingLeft
+	MstCollision _mstCollisionTable[2][kMaxMonsterObjects1]; // 0:facingRight, 1:facingLeft
 	int _wormHoleSpritesCount;
 	WormHoleSprite _wormHoleSpritesTable[6];
 
@@ -239,14 +235,14 @@ struct Game {
 	}
 
 	// benchmark.cpp
-	uint32_t benchmarkLoop(const uint8_t *p, int count);
 	uint32_t benchmarkCpu();
 
 	// game.cpp
-	void mainLoop(int &level, int &checkpoint, bool levelChanged);
+	void mainLoop(int level, int checkpoint, bool levelChanged);
 	void mixAudio(int16_t *buf, int len);
 	void resetShootLvlObjectDataTable();
 	void clearShootLvlObjectData(LvlObject *ptr);
+	void addShootLvlObject(LvlObject *_edx, LvlObject *ptr);
 	void setShakeScreen(int type, int counter);
 	void fadeScreenPalette();
 	void shakeScreen();
@@ -254,9 +250,10 @@ struct Game {
 	void loadTransformLayerData(const uint8_t *data);
 	void unloadTransformLayerData();
 	void decodeShadowScreenMask(LvlBackgroundData *lvl);
-	void playSound(int num, LvlObject *ptr, int a, int b);
+	SssObject *playSound(int num, LvlObject *ptr, int a, int b);
 	void removeSound(LvlObject *ptr);
 	void setupBackgroundBitmap();
+	void addToSpriteList(Sprite *spr);
 	void addToSpriteList(LvlObject *ptr);
 	int16_t calcScreenMaskDy(int16_t xPos, int16_t yPos, int num);
 	void setupScreenPosTable(uint8_t num);
@@ -289,9 +286,9 @@ struct Game {
 	void removeLvlObject2(LvlObject *o);
 	void setAndySprite(int num);
 	void setupAndyLvlObject();
-	void updateScreenHelper(int num);
+	void setupScreenLvlObjects(int num);
 	void resetDisplay();
-	void updateScreen(uint8_t num);
+	void setupScreen(uint8_t num);
 	void resetScreen();
 	void restartLevel();
 	void playAndyFallingCutscene(int type);
@@ -307,13 +304,13 @@ struct Game {
 	int restoreAndyCollidesLava();
 	int updateAndyLvlObject();
 	void drawPlasmaCannon();
+	void updateBackgroundPsx(int num);
 	void drawScreen();
 	void updateLvlObjectList(LvlObject **list);
 	void updateLvlObjectLists();
 	LvlObject *updateAnimatedLvlObjectType0(LvlObject *ptr);
 	LvlObject *updateAnimatedLvlObjectType1(LvlObject *ptr);
 	LvlObject *updateAnimatedLvlObjectType2(LvlObject *ptr);
-	LvlObject *updateAnimatedLvlObjectTypeDefault(LvlObject *ptr);
 	LvlObject *updateAnimatedLvlObject(LvlObject *o);
 	void updateAnimatedLvlObjectsLeftRightCurrentScreens();
 	void updatePlasmaCannonExplosionLvlObject(LvlObject *ptr);
@@ -329,7 +326,6 @@ struct Game {
 	void callLevel_terminate();
 	void displayLoadingScreen();
 	int displayHintScreen(int num, int pause);
-	void prependLvlObjectToList(LvlObject **list, LvlObject *ptr);
 	void removeLvlObjectFromList(LvlObject **list, LvlObject *ptr);
 	void *getLvlObjectDataPtr(LvlObject *o, int type) const;
 	void lvlObjectType0Init(LvlObject *ptr);
@@ -370,13 +366,13 @@ struct Game {
 	int clipAndyLvlObjectLar(BoundingBox *a, BoundingBox *b, bool flag);
 	void resetWormHoleSprites();
 	void updateWormHoleSprites();
-	bool loadSetupCfg(bool resume);
+	void loadSetupCfg(bool resume);
 	void saveSetupCfg();
 	void captureScreenshot();
 
 	// level1_rock.cpp
 	int objectUpdate_rock_case0(LvlObject *o);
-	void objectUpdate_rock_helper(LvlObject *ptr, uint8_t *p);
+	void objectUpdate_rockShadow(LvlObject *ptr, uint8_t *p);
 	bool plasmaCannonHit(LvlObject *ptr);
 	int objectUpdate_rock_case1(LvlObject *o);
 	int objectUpdate_rock_case2(LvlObject *o);
@@ -503,6 +499,8 @@ struct Game {
 
 	// sound.cpp
 	bool _sssDisabled;
+	int16_t _snd_buffer[4096];
+	int _snd_bufferOffset, _snd_bufferSize;
 	bool _snd_muted;
 	int _snd_masterPanning;
 	int _snd_masterVolume;
@@ -511,7 +509,7 @@ struct Game {
 	int _sssObjectsCount;
 	SssObject *_sssObjectsList1; // playing
 	SssObject *_sssObjectsList2; // paused/idle
-	SssObject *_lowRankSssObject;
+	SssObject *_lowPrioritySssObject;
 	bool _sssUpdatedObjectsTable[kMaxSssObjects];
 	int _playingSssObjectsMax;
 	int _playingSssObjectsCount;
@@ -519,7 +517,9 @@ struct Game {
 	void muteSound();
 	void unmuteSound();
 	void resetSound();
-	SssObject *findLowestRankSoundObject() const;
+	int getSoundPosition(const SssObject *so);
+	void setSoundPanning(SssObject *so, int panning);
+	SssObject *findLowPrioritySoundObject() const;
 	void removeSoundObjectFromList(SssObject *so);
 	void updateSoundObject(SssObject *so);
 	void sssOp4_removeSounds(uint32_t flags);
@@ -532,7 +532,7 @@ struct Game {
 	void updateSssGroup2(uint32_t flags);
 	SssObject *createSoundObject(int bankIndex, int sampleIndex, uint32_t flags);
 	SssObject *startSoundObject(int bankIndex, int sampleIndex, uint32_t flags);
-	void playSoundObject(SssInfo *s, int source, int b);
+	SssObject *playSoundObject(SssInfo *s, int source, int b);
 	void clearSoundObjects();
 	void setLowPrioritySoundObject(SssObject *so);
 	int getSoundObjectPanning(SssObject *so) const;

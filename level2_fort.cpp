@@ -72,6 +72,7 @@ void Level_fort::postScreenUpdate_fort_screen1() {
 			_g->setupScreenMask(1);
 		} else if (_screenCounterTable[1] == 59) {
 			_res->_screensState[1].s0 = 1;
+			_g->updateBackgroundPsx(1);
 			_res->_resLvlScreenBackgroundDataTable[1].currentBackgroundId = 1;
 		}
 	}
@@ -150,7 +151,7 @@ void Level_fort::postScreenUpdate_fort_screen8() {
 
 void Level_fort::postScreenUpdate_fort_screen16() {
 	if (_res->_currentScreenResourceNum == 16) {
-		if (_res->_screensState[16].s0 == 1) {
+		if (_res->_screensState[16].s0 != 1) {
 			AndyLvlObjectData *data = (AndyLvlObjectData *)_g->getLvlObjectDataPtr(_andyObject, kObjectDataTypeAndy);
 			BoundingBox b = { 150, 0, 187, 60 };
                 	if (!_g->clipBoundingBox(&b, &data->boundingBox)) {
@@ -183,7 +184,7 @@ void Level_fort::postScreenUpdate_fort_screen17() {
 	if (_res->_screensState[17].s0 == 1) {
 		++_screenCounterTable[17];
 		if (_screenCounterTable[17] == 68) {
-			_screenCounterTable[17] = 0;
+			_res->_screensState[17].s0 = 0;
 		}
 	}
 }

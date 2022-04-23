@@ -86,6 +86,7 @@ void Level_lava::postScreenUpdate_lava_screen0() {
 		++_screenCounterTable[0];
 		if (_screenCounterTable[0] >= 11) {
 			_res->_screensState[0].s0 = 1;
+			_g->updateBackgroundPsx(1);
 		}
 		break;
 	case 0:
@@ -396,7 +397,7 @@ void Level_lava::postScreenUpdate_lava_screen10() {
 							_paf->play(7);
 							_paf->unload(7);
 							_video->clearPalette();
-							_g->updateScreen(_andyObject->screenNum);
+							_g->setupScreen(_andyObject->screenNum);
 						}
 					}
 				}
@@ -594,7 +595,7 @@ void Level_lava::tick() {
 void Level_lava::setupScreenCheckpoint_lava_screen3() {
 	LvlObject *ptr = _g->findLvlObject(2, 0, 3);
 	assert(ptr);
-	ptr->flags0 &= 0xFC00;
+	ptr->flags0 &= ~0x3FF;
 	ptr->xPos = 138;
 	ptr->yPos = 157;
 	ptr->anim = 0;
@@ -602,7 +603,7 @@ void Level_lava::setupScreenCheckpoint_lava_screen3() {
 	ptr->directionKeyMask = 0;
 	ptr = findLvlObject_lava(ptr);
 	assert(ptr);
-	ptr->flags0 &= 0xFC00;
+	ptr->flags0 &= ~0x3FF;
 	ptr->anim = 0;
 	ptr->frame = 0;
 	ptr->directionKeyMask = 0;

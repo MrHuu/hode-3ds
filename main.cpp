@@ -3,18 +3,13 @@
  * Copyright (C) 2009-2011 Gregory Montoir (cyx@users.sourceforge.net)
  */
 
+#if !defined(PSP) && !defined(WII)
 #include <SDL.h>
+#endif
+#include <ctype.h>
 #include <getopt.h>
 #include <sys/stat.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
-#ifdef _3DS
-#include <3ds.h>
-#include <unistd.h>
-#endif
 
-#include "3p/inih/ini.h"
 #include "game.h"
 #include "menu.h"
 #include "mixer.h"
@@ -23,25 +18,20 @@
 #include "resource.h"
 #include "system.h"
 #include "video.h"
-/*
-extern "C" {
-#include "3p/console/console.h"
-
-}
-*/
-
 
 #ifdef __SWITCH__
 #include <switch.h>
+#endif
+
+#ifdef __3DS__
+#include <3ds.h>
+#include <unistd.h>
 #endif
 
 static const char *_title = "Heart of Darkness";
 
 #ifdef __vita__
 static const char *_configIni = "ux0:data/hode/hode.ini";
-#endif
-#ifdef _3DS
-static const char *_configIni = "sdmc:/3ds/hode/hode.ini";
 #else
 static const char *_configIni = "hode.ini";
 #endif
@@ -55,11 +45,12 @@ static const char *_usage =
 	"  --checkpoint=NUM  Start at checkpoint NUM\n"
 ;
 
-static bool _fullscreen = true;
+static bool _fullscreen = false;
 static bool _widescreen = false;
 
 static const bool _runBenchmark = false;
 static bool _runMenu = true;
+static bool _displayLoadingScreen = true;
 
 static void lockAudio(int flag) {
 	if (flag) {
@@ -75,7 +66,6 @@ static void mixAudio(void *userdata, int16_t *buf, int len) {
 
 static void setupAudio(Game *g) {
 	g->_mix._lock = lockAudio;
-	g->_mix.init(g_system->getOutputSampleRate());
 	AudioCallback cb;
 	cb.proc = mixAudio;
 	cb.userdata = g;
@@ -103,8 +93,7 @@ static bool configBool(const char *value) {
 	return strcasecmp(value, "true") == 0 || (strlen(value) == 2 && (value[0] == 't' || value[0] == '1'));
 }
 
-static int handleConfigIni(void *userdata, const char *section, const char *name, const char *value) {
-	Game *g = (Game *)userdata;
+static void handleConfigIni(Game *g, const char *section, const char *name, const char *value) {
 	// fprintf(stdout, "config.ini: section '%s' name '%s' value '%s'\n", section, name, value);
 	if (strcmp(section, "engine") == 0) {
 		if (strcmp(name, "disable_paf") == 0) {
@@ -122,9 +111,9 @@ static int handleConfigIni(void *userdata, const char *section, const char *name
 		} else if (strcmp(name, "difficulty") == 0) {
 			g->_difficulty = atoi(value);
 		} else if (strcmp(name, "frame_duration") == 0) {
-			g->_frameMs = atoi(value);
+			g->_frameMs = g->_paf->_frameMs = atoi(value);
 		} else if (strcmp(name, "loading_screen") == 0) {
-			g->_loadingScreenEnabled = configBool(value);
+			_displayLoadingScreen = configBool(value);
 		}
 	} else if (strcmp(section, "display") == 0) {
 		if (strcmp(name, "scale_factor") == 0) {
@@ -140,56 +129,81 @@ static int handleConfigIni(void *userdata, const char *section, const char *name
 			_widescreen = configBool(value);
 		}
 	}
-	return 0;
+}
+
+static void readConfigIni(const char *filename, Game *g) {
+	FILE *fp = fopen(filename, "rb");
+	if (fp) {
+		char *section = 0;
+		char buf[256];
+		while (fgets(buf, sizeof(buf), fp)) {
+			if (buf[0] == '#') {
+				continue;
+			}
+			if (buf[0] == '[') {
+				char *p = strchr(&buf[1], ']');
+				if (p) {
+					*p = 0;
+					free(section);
+					section = strdup(&buf[1]);
+				}
+				continue;
+			}
+			char *p = strchr(buf, '=');
+			if (!p) {
+				continue;
+			}
+			*p++ = 0;
+			while (*p && isspace(*p)) {
+				++p;
+			}
+			if (*p) {
+				char *q = p + strlen(p) - 1;
+				while (q > p && isspace(*q)) {
+					*q-- = 0;
+				}
+				handleConfigIni(g, section, buf, p);
+			}
+		}
+		free(section);
+		fclose(fp);
+	}
 }
 
 int main(int argc, char *argv[]) {
-	
 #ifdef __SWITCH__
 	socketInitializeDefault();
 	nxlinkStdio();
 #endif
-#ifdef _3DS
 
-osSetSpeedupEnable(true);
+#ifdef __3DS__
+	osSetSpeedupEnable(true);
 
-	//romfsInit();
-	//acInit();
-//  fsInit();
-  gfxInitDefault();
-//	consoleInit(GFX_BOTTOM,NULL);
+	chdir("sdmc:/3ds");
 
-	//aptInit()
-
-#endif
-/*#ifdef __vita__
-	const char *dataPath = "ux0:data/hode";
-	const char *savePath = "ux0:data/hode";
-
-*/
-#ifdef _3DS
-	chdir("sdmc:/3ds/hode");
+	struct stat st = {0};
+	if (stat("hode", &st) == -1) {
+		mkdir("hode", 0700);
+	}
+	chdir("hode");
 #ifdef CTR_ROMFS
 	romfsInit();
 	const char *dataPath = "romfs:/data";
 #else
-	const char *dataPath = "./data";
+	const char *dataPath = "data";
 #endif
-	const char *savePath = "./save";
-	//	const char *savePath = "sdmc:/3ds/hode/save";
+	const char *savePath = "save";
+
+	if (stat(savePath, &st) == -1) {
+		mkdir(savePath, 0700);
+	}
+#elif __vita__
+	const char *dataPath = "ux0:data/hode";
+	const char *savePath = "ux0:data/hode";
 #else
-
-
-
-	char *dataPath = "data";
-	char *savePath = "save";
+	char *dataPath = 0;
+	char *savePath = 0;
 #endif
-
-#ifdef _3DS
-  //FILE *fp = freopen("/ftpd.log", "wb", stderr);
-
-#endif
-//	printf("1");
 	int level = 0;
 	int checkpoint = 0;
 	bool resume = true; // resume game from 'setup.cfg'
@@ -197,132 +211,134 @@ osSetSpeedupEnable(true);
 	g_debugMask = 0; //kDebug_GAME | kDebug_RESOURCE | kDebug_SOUND | kDebug_MONSTER;
 	int cheats = 0;
 
-	if (argc == 2) {
-		// data path as the only command line argument
+#ifdef WII
+	System_earlyInit();
+	static const char *pathsWII[] = {
+		"sd:/hode",
+		"usb:/hode",
+		0
+	};
+	for (int i = 0; pathsWII[i]; ++i) {
 		struct stat st;
-		if (stat(argv[1], &st) == 0 && S_ISDIR(st.st_mode)) {
-			dataPath = strdup(argv[1]);
+		if (stat(pathsWII[i], &st) == 0 && S_ISDIR(st.st_mode)) {
+			dataPath = strdup(pathsWII[i]);
+			savePath = strdup(pathsWII[i]);
+			break;
 		}
 	}
-
-//printf("1");
-#ifndef _3DS
-	while (1) { //rewrite with static datapath,savePath osv
-
-		static struct option options[] = {
-			{ "datapath",   required_argument, 0, 1 },
-			{ "savepath",   required_argument, 0, 2 },
-			{ "level",      required_argument, 0, 3 },
-			{ "checkpoint", required_argument, 0, 4 },
-			{ "debug",      required_argument, 0, 5 },
-			{ "cheats",     required_argument, 0, 6 },
-			{ 0, 0, 0, 0 },
-		};
-		int index;
-
-
-		const int c = getopt_long(argc, argv, "", options, &index);
-		if (c == -1) {
-			break;
+#endif
+	if (System_hasCommandLine()) {
+		if (argc == 2) {
+			// data path as the only command line argument
+			struct stat st;
+			if (stat(argv[1], &st) == 0 && S_ISDIR(st.st_mode)) {
+				dataPath = strdup(argv[1]);
+			}
 		}
-		switch (c) {
-		case 1:
-			dataPath = strdup(optarg);
-			break;
-		case 2:
-			savePath = strdup(optarg);
-			break;
-		case 3:
-			if (optarg[0] >= '0' && optarg[0] <= '9') {
-				level = atoi(optarg);
-			} else {
-				for (int i = 0; _levelNames[i]; ++i) {
-					if (strcmp(_levelNames[i], optarg) == 0) {
-						level = i;
-						break;
+		while (1) {
+			static struct option options[] = {
+				{ "datapath",   required_argument, 0, 1 },
+				{ "savepath",   required_argument, 0, 2 },
+				{ "level",      required_argument, 0, 3 },
+				{ "checkpoint", required_argument, 0, 4 },
+				{ "debug",      required_argument, 0, 5 },
+				{ "cheats",     required_argument, 0, 6 },
+				{ 0, 0, 0, 0 },
+			};
+			int index;
+			const int c = getopt_long(argc, argv, "", options, &index);
+			if (c == -1) {
+				break;
+			}
+			switch (c) {
+			case 1:
+				dataPath = strdup(optarg);
+				break;
+			case 2:
+				savePath = strdup(optarg);
+				break;
+			case 3:
+				if (optarg[0] >= '0' && optarg[0] <= '9') {
+					level = atoi(optarg);
+				} else {
+					for (int i = 0; _levelNames[i]; ++i) {
+						if (strcmp(_levelNames[i], optarg) == 0) {
+							level = i;
+							break;
+						}
 					}
 				}
+				resume = false;
+				break;
+			case 4:
+				checkpoint = atoi(optarg);
+				resume = false;
+				break;
+			case 5:
+				g_debugMask |= atoi(optarg);
+				break;
+			case 6:
+				cheats |= atoi(optarg);
+				break;
+			default:
+				fprintf(stdout, "%s\n", _usage);
+				return -1;
 			}
-			resume = false;
-			break;
-		case 4:
-			checkpoint = atoi(optarg);
-			resume = false;
-			break;
-		case 5:
-			g_debugMask |= atoi(optarg);
-			break;
-		case 6:
-			cheats |= atoi(optarg);
-			break;
-		default:
-			fprintf(stdout, "%s\n", _usage);
-			return -1;
 		}
 	}
-#endif
-
-#ifdef _3DS
-//	printf("2");
-	Game *g = new Game(dataPath, savePath, cheats);
-#else
-  Game *g = new Game(dataPath ? dataPath : _defaultDataPath, savePath ? savePath : _defaultSavePath, cheats);
-#endif
-	ini_parse(_configIni, handleConfigIni, g);
+	Game *g = new Game(dataPath ? dataPath : _defaultDataPath, savePath ? savePath : _defaultSavePath, cheats);
+	readConfigIni(_configIni, g);
 	if (_runBenchmark) {
 		g->benchmarkCpu();
 	}
-
-	// load setup.dat and detects if these are PC or PSX datafiles
+	// load setup.dat (PC) or setup.dax (PSX)
 	g->_res->loadSetupDat();
 	const bool isPsx = g->_res->_isPsx;
 	g_system->init(_title, Video::W, Video::H, _fullscreen, _widescreen, isPsx);
-
 	setupAudio(g);
-
-	g->loadSetupCfg(resume);
-	bool runGame = true;
-	g->_video->init(isPsx);
-//	printf("3");
-	if (_runMenu && resume && !isPsx) {
-		Menu *m = new Menu(g, g->_paf, g->_res, g->_video);
-
-		//u64 time_taken = ((double)start)/1000000;
-		runGame = m->mainLoop();
-		delete m;
+	if (isPsx) {
+		g->_video->initPsx();
 	}
-
-	if (runGame && !g_system->inp.quit) {
+	if (_displayLoadingScreen) {
+		g->displayLoadingScreen();
+	}
+	do {
+		g->loadSetupCfg(resume);
+		if (_runMenu && resume) {
+			Menu *m = new Menu(g, g->_paf, g->_res, g->_video);
+			const bool runGame = m->mainLoop();
+			delete m;
+			if (!runGame) {
+				break;
+			}
+		}
 		bool levelChanged = false;
-		do {
+		while (!g_system->inp.quit && level < kLvl_test) {
+			if (_displayLoadingScreen) {
+				g->displayLoadingScreen();
+			}
 			g->mainLoop(level, checkpoint, levelChanged);
-			// do not save progress when game is started from a specific level/checkpoint
+			// do not save progress when starting from a specific level checkpoint
 			if (resume) {
 				g->saveSetupCfg();
 			}
-			level += 1;
+			if (g->_res->_isDemo) {
+				break;
+			}
+			level = g->_currentLevel + 1;
 			checkpoint = 0;
 			levelChanged = true;
-		} while (!g_system->inp.quit && level < kLvl_test);
-	}
+		}
+	} while (!g_system->inp.quit && resume && !isPsx); // do not return to menu when starting from a specific level checkpoint
 	g_system->stopAudio();
-	g->_mix.fini();
 	g_system->destroy();
 	delete g;
-#ifndef __vita__
-#ifndef _3DS
+#if !defined(__vita__) && !defined(__3DS__)
 	free(dataPath);
 	free(savePath);
 #endif
-#endif
 #ifdef __SWITCH__
 	socketExit();
-#endif
-#ifdef _3DS
-#ifdef CTR_ROMFS
-romfsExit();
-#endif
-gfxExit();
 #endif
 	return 0;
 }

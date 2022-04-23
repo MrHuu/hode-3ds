@@ -8,18 +8,16 @@
 
 #include "intern.h"
 
-typedef void (*ScaleProc32)(int factor, uint32_t *dst, int dstPitch, const uint32_t *src, int srcPitch, int w, int h);
-
-#define SCALER_TAG 1
+typedef void (*PaletteProc)(const uint32_t *palette);
+typedef void (*ScaleProc)(uint32_t *dst, int dstPitch, const uint8_t *src, int srcPitch, int w, int h, const uint32_t *palette);
 
 struct Scaler {
-	uint32_t tag;
 	const char *name;
 	int factorMin, factorMax;
-	ScaleProc32 scale;
+	PaletteProc palette; // palette changes
+	ScaleProc scale[3]; // 2x-4x factors
 };
 
-extern const Scaler scaler_nearest;
 extern const Scaler scaler_xbr;
 
 #endif // SCALER_H__

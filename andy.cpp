@@ -1444,20 +1444,9 @@ void Game::setupAndyObjectMoveData(LvlObject *ptr) {
 	_andyMoveData.yPos = ptr->yPos;
 	_andyPosX = _res->_screensBasePos[ptr->screenNum].u + _andyMoveData.xPos;
 	_andyPosY = _res->_screensBasePos[ptr->screenNum].v + _andyMoveData.yPos;
-	_andyMoveData.anim = ptr->anim;
-	_andyMoveData.unkA = ptr->currentSprite;
-	_andyMoveData.frame = ptr->frame;
 	_andyMoveData.flags0 = ptr->flags0;
 	_andyMoveData.flags1 = ptr->flags1;
 	_andyMoveMask = (ptr->flags1 >> 4) & 3;
-	_andyMoveData.unk16 = ptr->width;
-	_andyMoveData.unk18 = ptr->height;
-	const LvlObjectData *dat = ptr->levelData0x2988;
-	_andyMoveData.unkC = dat->hotspotsCount;
-	_andyMoveData.unk1C = dat->animsInfoData;
-	_andyMoveData.framesData = dat->framesData;
-	_andyMoveData.unk24 = dat->movesData;
-	_andyMoveData.unk28 = dat->hotspotsData;
 	_andyLevelData0x288PosTablePtr = ptr->posTable;
 }
 
@@ -1530,8 +1519,6 @@ void Game::setupAndyObjectMoveState() {
 }
 
 void Game::updateAndyObject(LvlObject *ptr) {
-	//u64 start ,stop, result;
-	//start = osGetTime();
 	_andyUpdatePositionFlag = false;
 	int xPos = 0;
 	int yPos = 0;
@@ -1556,7 +1543,6 @@ void Game::updateAndyObject(LvlObject *ptr) {
 	if (dat->frame != 0) {
 		setupAndyObjectMoveState();
 	}
-
 	while (count != 0) {
 		--count;
 		assert(asfh[count].move < dat->movesCount);
@@ -1580,7 +1566,6 @@ void Game::updateAndyObject(LvlObject *ptr) {
 		}
 		break;
 	}
-
 	ptr->flags0 = _andyMoveData.flags0;
 	ptr->flags1 = _andyMoveData.flags1;
 	ptr->xPos = _andyMoveData.xPos;
@@ -1602,28 +1587,28 @@ void Game::updateAndyObject(LvlObject *ptr) {
 		uint16_t w, h;
 		_res->getLvlSpriteFramePtr(dat, ash->firstFrame, &w, &h);
 
-		ptr->flags1 = ((ptr->flags1 & 0x30) ^ ((asfh->unk5 & 3) << 4)) | (ptr->flags1 & ~0x30);
+		ptr->flags1 = ((ptr->flags1 & 0x30) ^ ((asfh->flags & 3) << 4)) | (ptr->flags1 & ~0x30);
 		int type = (ptr->flags1 >> 4) & 3;
 
 		switch (type) {
 		case 0:
-			ptr->xPos += asfh->unk6;
-			ptr->yPos += asfh->unk7;
+			ptr->xPos += asfh->xOffset;
+			ptr->yPos += asfh->yOffset;
 			break;
 		case 1:
-			ptr->xPos += ptr->width - asfh->unk6 - w;
-			ptr->yPos += asfh->unk7;
+			ptr->xPos += ptr->width - asfh->xOffset - w;
+			ptr->yPos += asfh->yOffset;
 			break;
 		case 2:
-			ptr->xPos += asfh->unk6;
-			ptr->yPos += ptr->height - asfh->unk7 - h;
+			ptr->xPos += asfh->xOffset;
+			ptr->yPos += ptr->height - asfh->yOffset - h;
 			break;
 		case 3:
-			ptr->xPos += ptr->width - asfh->unk6 - w;
-			ptr->yPos += ptr->height - asfh->unk7 - h;
+			ptr->xPos += ptr->width - asfh->xOffset - w;
+			ptr->yPos += ptr->height - asfh->yOffset - h;
 			break;
 		}
-		//test1
+
 	} else {
 sameAnim:
 
@@ -1662,26 +1647,15 @@ sameAnim:
 			ptr->yPos -= ash->dy + dh;
 			break;
 		}
-		//test2 is below
 	}
-
 
 	ptr->anim = currentAnim;
 	ptr->frame = currentAnimFrame;
-	//stop = (osGetTime() -start);
-	//result = stop;
-	//if(result>3){
-	//	printf("updateAndyObject-1() took %llu ms to execute \n", result);
-	//}
+
 	ptr->currentSound = ash->sound;
 	if (ptr->currentSound != 0xFFFF && ptr->type == 8 && ptr->spriteNum < 5) {
-		playSound(ptr->currentSound, ptr, 0, 0); // this is pretty slow
+		playSound(ptr->currentSound, ptr, 0, 0);
 	}
-	//stop = (osGetTime() -start);
-	//result = stop;
-	//if(result>3){
-	//	printf("updateAndyObject() took %llu ms to execute \n", result);
-	//}
 
 	ptr->flags0 = merge_bits(ptr->flags0, ash->flags0, 0x3FF);
 	ptr->flags1 = merge_bits(ptr->flags1, ash->flags1, 6);
@@ -1690,13 +1664,9 @@ sameAnim:
 	ptr->currentSprite = ash->firstFrame;
 
 	ptr->bitmapBits = _res->getLvlSpriteFramePtr(dat, ash->firstFrame, &ptr->width, &ptr->height);
-	//stop = (osGetTime() -start);
-	//result = stop;
-	//if(result>3){
-	//	printf("updateAndyObject_2() took %llu ms to execute \n", result);
-	//}
+
 	LvlSprHotspotData *hs = ((LvlSprHotspotData *)dat->hotspotsData) + ash->firstFrame;
-	//test3 is above
+
 	if (_andyUpdatePositionFlag) {
 		ptr->flags1 &= ~0x30;
 	}

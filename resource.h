@@ -9,8 +9,6 @@
 #include "defs.h"
 #include "intern.h"
 
-
-
 struct DatHdr {
 	uint32_t version; // 0x0
 	uint32_t bufferSize0; // 0x4
@@ -41,10 +39,10 @@ struct LvlScreenVector {
 };
 
 struct LvlScreenState {
-	uint8_t s0;
-	uint8_t s1;
-	uint8_t s2;
-	uint8_t s3; // maskData
+	uint8_t s0; // current state
+	uint8_t s1; // states count
+	uint8_t s2; // lvlObjects initialized
+	uint8_t s3; // current mask
 };
 
 struct LvlBackgroundData {
@@ -219,7 +217,7 @@ struct MstAttackBox { // u47
 }; // sizeof == 8
 
 struct MstMonsterAreaAction {
-	uint32_t unk0; // 0x0, indexes _mstMonsterInfos
+	uint32_t indexMonsterInfo; // 0x0, indexes _mstMonsterInfos
 	uint32_t indexUnk51; // 0x4
 	int32_t xPos; // 0x8
 	int32_t yPos; // 0xC
@@ -238,8 +236,8 @@ struct MstMonsterArea {
 }; // sizeof == 12
 
 struct MstMonsterAction { // u48
-	uint16_t unk0;
-	uint16_t unk2;
+	uint16_t xRange;
+	uint16_t yRange;
 	uint8_t unk4;
 	uint8_t direction;
 	uint8_t unk6;
@@ -280,7 +278,7 @@ struct MstMovingBounds { // u49
 struct MstShootAction { // u50u1
 	uint32_t codeData;
 	uint32_t unk4;
-	uint32_t unk8;
+	uint32_t dirMask;
 	uint32_t xPos; // C
 	uint32_t yPos; // 10
 	uint32_t width; // 14
@@ -318,11 +316,11 @@ struct MstOp223Data {
 	int16_t indexVar2; // 2
 	int16_t indexVar3; // 4
 	int16_t indexVar4; // 6
-	uint8_t unk8; // 8
-	uint8_t unk9;
+	uint8_t type; // 8
+	uint8_t flags1;
 	int8_t indexVar5; // A
 	int8_t unkB; // B
-	uint16_t unkC; // C
+	uint16_t flags2; // C
 	uint16_t unkE; // E
 	uint32_t maskVars; // 0x10
 }; // sizeof == 20
@@ -448,7 +446,8 @@ struct SssSample {
 
 struct SssPreloadList {
 	int count;
-	uint8_t *ptr; // uint16_t for v12
+	int ptrSize;
+	uint8_t *ptr; // uint16_t for v6 or v12, uint8_t for v10
 };
 
 struct SssPreloadInfoData {
@@ -459,6 +458,7 @@ struct SssPreloadInfoData {
 	uint8_t preload1Index;
 	uint8_t preload2Index;
 	uint32_t unk1C;
+	SssPreloadList preload1Data_V6;
 }; // sizeof == 32 (v10,v12) 68 (v6)
 
 struct SssPreloadInfo {
@@ -487,11 +487,23 @@ struct SssPcm {
 	uint32_t strideSize;  // 12
 	uint16_t strideCount; // 16
 	uint16_t flags;       // 18 1:stereo
+	uint32_t pcmSize;     // decompressed PCM size in bytes
 };
 
 struct SssUnk6 {
 	uint32_t unk0[4]; // 0
 	uint32_t mask; // 10
+};
+
+struct Dem {
+	uint32_t randSeed;
+	uint32_t keyMaskLen;
+	uint8_t level;
+	uint8_t checkpoint;
+	uint8_t difficulty;
+	uint8_t randRounds;
+	uint8_t *actionKeyMask;
+	uint8_t *directionKeyMask;
 };
 
 template <typename T>
@@ -530,6 +542,11 @@ struct ResStruct {
 struct FileSystem;
 
 struct Resource {
+	enum {
+		V1_0,
+		V1_1,
+		V1_2  // 1.2 or newer
+	};
 
 	FileSystem *_fs;
 
@@ -543,29 +560,38 @@ struct Resource {
 	File *_sssFile;
 
 	bool _isPsx;
+	bool _isDemo;
+	int _version;
 
 	uint8_t *_loadingImageBuffer;
 	uint8_t *_fontBuffer;
+	uint8_t _fontDefaultColor;
 	uint8_t *_menuBuffer0;
 	uint8_t *_menuBuffer1;
 	uint32_t _menuBuffersOffset;
+
+	Dem _dem;
+	uint32_t _demOffset;
 
 	uint8_t _currentScreenResourceNum;
 
 	uint8_t _screensGrid[kMaxScreens][4];
 	LvlScreenVector _screensBasePos[kMaxScreens];
 	LvlScreenState _screensState[kMaxScreens];
-	uint8_t *_resLevelData0x470CTable;
+	uint8_t *_resLevelData0x470CTable; // masks
 	uint8_t *_resLevelData0x470CTablePtrHdr;
 	uint8_t *_resLevelData0x470CTablePtrData;
-	uint32_t _lvlSssOffset;
-	uint32_t _resLevelData0x2B88SizeTable[kMaxScreens];
-	uint32_t _resLevelData0x2988SizeTable[kMaxSpriteTypes];
-	LvlObjectData _resLevelData0x2988Table[kMaxScreens];
+	uint32_t _lvlSpritesOffset;
+	uint32_t _lvlBackgroundsOffset;
+	uint32_t _lvlMasksOffset;
+	uint32_t _lvlSssOffset; // .sss offset (PSX)
+	uint32_t _resLevelData0x2988SizeTable[kMaxSpriteTypes]; // sprites
+	LvlObjectData _resLevelData0x2988Table[kMaxSpriteTypes];
 	LvlObjectData *_resLevelData0x2988PtrTable[kMaxSpriteTypes];
+	uint8_t *_resLvlSpriteDataPtrTable[kMaxSpriteTypes];
+	uint32_t _resLevelData0x2B88SizeTable[kMaxScreens]; // backgrounds
 	LvlBackgroundData _resLvlScreenBackgroundDataTable[kMaxScreens];
 	uint8_t *_resLvlScreenBackgroundDataPtrTable[kMaxScreens];
-	uint8_t *_resLvlSpriteDataPtrTable[kMaxSpriteTypes];
 
 	LvlObject _resLvlScreenObjectDataTable[104];
 	LvlObject _dummyObject; // (LvlObject *)0xFFFFFFFF
@@ -635,11 +661,11 @@ struct Resource {
 	void loadLvlScreenObjectData(LvlObject *dat, const uint8_t *src);
 	void loadLvlData(File *fp);
 	void unloadLvlData();
-	void loadLvlSpriteData(int num);
+	void loadLvlSpriteData(int num, const uint8_t *buf = 0);
 	const uint8_t *getLvlScreenMaskDataPtr(int num) const;
 	const uint8_t *getLvlScreenPosDataPtr(int num) const;
 	void loadLvlScreenMaskData();
-	void loadLvlScreenBackgroundData(int num);
+	void loadLvlScreenBackgroundData(int num, const uint8_t *buf = 0);
 	void unloadLvlScreenBackgroundData(int num);
 	bool isLvlSpriteDataLoaded(int num) const;
 	bool isLvlBackgroundDataLoaded(int num) const;
@@ -653,7 +679,6 @@ struct Resource {
 	void unloadSssData();
 	void checkSssCode(const uint8_t *buf, int size) const;
 	void loadSssPcm(File *fp, SssPcm *pcm);
-	uint32_t getSssPcmSize(const SssPcm *pcm) const;
 	void clearSssGroup3();
 	void resetSssFilters();
 	void preloadSssPcmList(const SssPreloadInfoData *preloadInfoData);
@@ -663,8 +688,12 @@ struct Resource {
 	const MstScreenArea *findMstCodeForPos(int num, int xPos, int yPos) const;
 	void flagMstCodeForPos(int num, uint8_t value);
 
+	bool loadHodDem();
+	void unloadHodDem();
+
 	bool writeSetupCfg(const SetupConfig *config);
 	bool readSetupCfg(SetupConfig *config);
+	void setDefaultsSetupCfg(SetupConfig *config, int num);
 };
 
 #endif // RESOURCE_H__

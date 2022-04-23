@@ -30,13 +30,10 @@ struct PlayerInput {
 	bool keyReleased(int keyMask) const {
 		return (prevMask & keyMask) == keyMask && (mask & keyMask) == 0;
 	}
-	void flush() {
-		prevMask = mask = 0;
-	}
 };
 
 struct AudioCallback {
-	void (*proc)(void *param, int16_t *stream, int len);
+	void (*proc)(void *param, int16_t *stream, int len); // 22khz
 	void *userdata;
 };
 
@@ -51,7 +48,8 @@ struct System {
 	virtual void setScaler(const char *name, int multiplier) = 0;
 	virtual void setGamma(float gamma) = 0;
 
-	virtual void setPalette(const uint8_t *pal, int n, int depth = 8) = 0;
+	virtual void setPalette(const uint8_t *pal, int n, int depth) = 0;
+	virtual void clearPalette() = 0;
 	virtual void copyRect(int x, int y, int w, int h, const uint8_t *buf, int pitch) = 0;
 	virtual void copyYuv(int w, int h, const uint8_t *y, int ypitch, const uint8_t *u, int upitch, const uint8_t *v, int vpitch) = 0;
 	virtual void fillRect(int x, int y, int w, int h, uint8_t color) = 0;
@@ -65,11 +63,15 @@ struct System {
 
 	virtual void startAudio(AudioCallback callback) = 0;
 	virtual void stopAudio() = 0;
-	virtual uint32_t getOutputSampleRate() = 0;
 	virtual void lockAudio() = 0;
 	virtual void unlockAudio() = 0;
 	virtual AudioCallback setAudioCallback(AudioCallback callback) = 0;
 };
+
+extern void System_earlyInit();
+extern void System_printLog(FILE *, const char *s);
+extern void System_fatalError(const char *s);
+extern bool System_hasCommandLine();
 
 extern System *const g_system;
 

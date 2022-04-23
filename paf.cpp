@@ -12,6 +12,7 @@ static const char *_filenames[] = {
 	"hod.paf",
 	"hod_demo.paf",
 	"hod_demo2.paf",
+	"hod_oem.paf",
 	0
 };
 
@@ -34,10 +35,8 @@ static void closePaf(FileSystem *fs, File *f) {
 }
 
 PafPlayer::PafPlayer(FileSystem *fs)
-	: _skipCutscenes(false), _fs(fs) {
-	if (!openPaf(_fs, &_file)) {
-		_skipCutscenes = true;
-	}
+	: _fs(fs) {
+	_skipCutscenes = !openPaf(_fs, &_file);
 	_videoNum = -1;
 	memset(&_pafHdr, 0, sizeof(_pafHdr));
 	memset(_pageBuffers, 0, sizeof(_pageBuffers));
@@ -45,11 +44,18 @@ PafPlayer::PafPlayer(FileSystem *fs)
 	_demuxVideoFrameBlocks = 0;
 	_audioQueue = _audioQueueTail = 0;
 	_playedMask = 0;
+	memset(&_pafCb, 0, sizeof(_pafCb));
+	_volume = 128;
+	_frameMs = kFrameDuration;
 }
 
 PafPlayer::~PafPlayer() {
 	unload();
 	closePaf(_fs, &_file);
+}
+
+void PafPlayer::setVolume(int volume) {
+	_volume = volume;
 }
 
 void PafPlayer::preload(int num) {
@@ -131,6 +137,7 @@ bool PafPlayer::readPafHeader() {
 		warning("readPafHeader() Unexpected signature");
 		return false;
 	}
+	_pafHdr.frameDuration = READ_LE_UINT32(_bufferBlock + 0x88);
 	_pafHdr.startOffset = READ_LE_UINT32(_bufferBlock + 0xA4);
 	_pafHdr.preloadFrameBlocksCount = READ_LE_UINT32(_bufferBlock + 0x9C);
 	_pafHdr.readBufferSize = READ_LE_UINT32(_bufferBlock + 0x98);
@@ -177,14 +184,16 @@ void PafPlayer::decodeVideoFrame(const uint8_t *src) {
 			memset(_pageBuffers[i], 0, kPageBufferSize);
 		}
 		memset(_paletteBuffer, 0, sizeof(_paletteBuffer));
+		_paletteChanged = true;
 		_currentPageBuffer = 0;
 	}
 	if (code & 0x40) {
-		int index = src[0];
-		int count = (src[1] + 1) * 3;
+		const int index = src[0];
+		const int count = (src[1] + 1) * 3;
 		assert(index * 3 + count <= 768);
 		src += 2;
 		memcpy(_paletteBuffer + index * 3, src, count);
+		_paletteChanged = true;
 		src += count;
 	}
 	switch (code & 0xF) {
@@ -254,28 +263,25 @@ static const char *updateSequences[] = {
 	"\x02\x04\x05\x07\x05\x07"
 };
 
-uint8_t *PafPlayer::getVideoPageOffset(uint8_t a, uint8_t b) {
-	const int x = b & 0x7F;
-	const int y = ((a & 0x3F) << 1) | ((b >> 7) & 1);
-	const int page = (a & 0xC0) >> 6;
-	return _pageBuffers[page] + (y * kVideoWidth + x) * 2;
+uint8_t *PafPlayer::getVideoPageOffset(uint16_t val) {
+	const int x = val & 0x7F; val >>= 7;
+	const int y = val & 0x7F; val >>= 7;
+	return _pageBuffers[val] + (y * kVideoWidth + x) * 2;
 }
 
 void PafPlayer::decodeVideoFrameOp0(const uint8_t *base, const uint8_t *src, uint8_t code) {
-	int count = *src++;
+	const int count = *src++;
 	if (count != 0) {
 		if ((code & 0x10) != 0) {
-			int align = src - base;
-			align &= 3;
+			const int align = (src - base) & 3;
 			if (align != 0) {
 				src += 4 - align;
 			}
 		}
-		do {
-			uint8_t *dst = getVideoPageOffset(src[0], src[1]);
+		for (int i = 0; i < count; ++i) {
+			uint8_t *dst = getVideoPageOffset((src[0] << 8) | src[1]);
 			uint32_t offset = (src[1] & 0x7F) * 2;
-			uint32_t end = READ_LE_UINT16(src + 2); src += 4;
-			end += offset;
+			const uint32_t end = READ_LE_UINT16(src + 2) + offset; src += 4;
 			do {
 				++offset;
 				pafCopy4x4h(dst, src);
@@ -285,43 +291,37 @@ void PafPlayer::decodeVideoFrameOp0(const uint8_t *base, const uint8_t *src, uin
 				}
 				dst += 4;
 			} while (offset < end);
-		} while (--count != 0);
+		}
 	}
 
 	uint8_t *dst = _pageBuffers[_currentPageBuffer];
-	count = 0;
-	do {
-		const uint8_t *src2 = getVideoPageOffset(src[0], src[1]); src += 2;
-		pafCopy4x4v(dst, src2);
-		++count;
-		if ((count & 0x3F) == 0) {
-			dst += kVideoWidth * 3;
+	for (int y = 0; y < kVideoHeight; y += 4, dst += kVideoWidth * 3) {
+		for (int x = 0; x < kVideoWidth; x += 4, dst += 4) {
+			const uint8_t *src2 = getVideoPageOffset((src[0] << 8) | src[1]); src += 2;
+			pafCopy4x4v(dst, src2);
 		}
-		dst += 4;
-	} while (count < kVideoWidth * kVideoHeight / 16);
+	}
 
 	const uint32_t opcodesSize = READ_LE_UINT16(src); src += 4;
-
-	const char *opcodes;
 	const uint8_t *opcodesData = src;
 	src += opcodesSize;
 
 	uint8_t mask = 0;
 	uint8_t color = 0;
 	const uint8_t *src2 = 0;
+	const char *seq;
 
 	dst = _pageBuffers[_currentPageBuffer];
 	for (int y = 0; y < kVideoHeight; y += 4, dst += kVideoWidth * 3) {
 		for (int x = 0; x < kVideoWidth; x += 4, dst += 4) {
-			if ((x & 4) == 0) {
-				opcodes = updateSequences[*opcodesData >> 4];
-			} else {
-				opcodes = updateSequences[*opcodesData & 15];
+			if (x & 4) {
+				seq = updateSequences[*opcodesData & 15];
 				++opcodesData;
+			} else {
+				seq = updateSequences[*opcodesData >> 4];
 			}
-			while (*opcodes) {
+			for (; (code = *seq) != 0; ++seq) {
 				uint32_t offset = kVideoWidth * 2;
-				const int code = *opcodes++;
 				switch (code) {
 				case 2:
 					offset = 0;
@@ -336,7 +336,7 @@ void PafPlayer::decodeVideoFrameOp0(const uint8_t *base, const uint8_t *src, uin
 				case 5:
 					offset = 0;
 				case 6:
-					src2 = getVideoPageOffset(src[0], src[1]); src += 2;
+					src2 = getVideoPageOffset((src[0] << 8) | src[1]); src += 2;
 				case 7:
 					mask = *src++;
 					pafCopySrcMask(mask >> 4, dst + offset, src2 + offset);
@@ -362,10 +362,10 @@ void PafPlayer::decodeVideoFrameOp2(const uint8_t *src) {
 
 void PafPlayer::decodeVideoFrameOp4(const uint8_t *src) {
 	uint8_t *dst = _pageBuffers[_currentPageBuffer];
-	src += 2;
-	int size = kVideoWidth * kVideoHeight;
-	while (size != 0) {
-		int8_t code = *src++;
+	src += 2; // compressed size
+	const uint8_t *end = dst + kVideoWidth * kVideoHeight;
+	while (dst < end) {
+		const int8_t code = *src++;
 		int count;
 		if (code < 0) {
 			count = 1 - code;
@@ -377,14 +377,14 @@ void PafPlayer::decodeVideoFrameOp4(const uint8_t *src) {
 			src += count;
 		}
 		dst += count;
-		size -= count;
 	}
 }
 
-static void decodeAudioFrame2205(const uint8_t *src, int len, int16_t *dst) {
-	const int offset = 256 * sizeof(int16_t);
+static void decodeAudioFrame2205(const uint8_t *src, int len, int16_t *dst, int volume) {
+	static const int offset = 256 * sizeof(int16_t);
 	for (int i = 0; i < len * 2; ++i) { // stereo
-		dst[i] = READ_LE_UINT16(src + src[offset + i] * sizeof(int16_t));
+		const int16_t sample = READ_LE_UINT16(src + src[offset + i] * sizeof(int16_t));
+		dst[i] = CLIP((sample * volume + 64) >> 7, -32768, 32767);
 	}
 }
 
@@ -408,10 +408,10 @@ void PafPlayer::decodeAudioFrame(const uint8_t *src, uint32_t offset, uint32_t s
 		if (sq) {
 			sq->offset = 0;
 			sq->size = count * kAudioSamples * 2;
-			sq->buffer = (int16_t *)calloc(sq->size, sizeof(int16_t));
+			sq->buffer = (int16_t *)malloc(sq->size * sizeof(int16_t));
 			if (sq->buffer) {
 				for (int i = 0; i < count; ++i) {
-					decodeAudioFrame2205(src + _audioBufferOffsetRd + i * kAudioStrideSize, kAudioSamples, sq->buffer + i * kAudioSamples * 2);
+					decodeAudioFrame2205(src + _audioBufferOffsetRd + i * kAudioStrideSize, kAudioSamples, sq->buffer + i * kAudioSamples * 2, _volume);
 				}
 			}
 			sq->next = 0;
@@ -426,8 +426,9 @@ void PafPlayer::decodeAudioFrame(const uint8_t *src, uint32_t offset, uint32_t s
 			_audioQueueTail = sq;
 			g_system->unlockAudio();
 		}
+
+		_audioBufferOffsetRd += count * kAudioStrideSize;
 	}
-	_audioBufferOffsetRd += count * kAudioStrideSize;
 	if (_audioBufferOffsetWr == _flushAudioSize) {
 		_audioBufferOffsetWr = 0;
 		_audioBufferOffsetRd = 0;
@@ -437,9 +438,10 @@ void PafPlayer::decodeAudioFrame(const uint8_t *src, uint32_t offset, uint32_t s
 void PafPlayer::mix(int16_t *buf, int samples) {
 	while (_audioQueue && samples > 0) {
 		assert(_audioQueue->size != 0);
-		*buf++ = _audioQueue->buffer[_audioQueue->offset++];
-		*buf++ = _audioQueue->buffer[_audioQueue->offset++];
-		samples -= 2;
+		const int count = MIN(samples, _audioQueue->size - _audioQueue->offset);
+		memcpy(buf, _audioQueue->buffer + _audioQueue->offset, count * sizeof(int16_t));
+		buf += count;
+		_audioQueue->offset += count;
 		if (_audioQueue->offset >= _audioQueue->size) {
 			assert(_audioQueue->offset == _audioQueue->size);
 			PafAudioQueue *next = _audioQueue->next;
@@ -447,12 +449,13 @@ void PafPlayer::mix(int16_t *buf, int samples) {
 			free(_audioQueue);
 			_audioQueue = next;
 		}
+		samples -= count;
 	}
 	if (!_audioQueue) {
 		_audioQueueTail = 0;
 	}
 	if (samples > 0) {
-		warning("PafPlayer::mix() soundQueue underrun %d", samples);
+		debug(kDebug_PAF, "audioQueue underrun %d", samples);
 	}
 }
 
@@ -463,9 +466,10 @@ static void mixAudio(void *userdata, int16_t *buf, int len) {
 void PafPlayer::mainLoop() {
 	_file.seek(_videoOffset + _pafHdr.startOffset, SEEK_SET);
 	for (int i = 0; i < 4; ++i) {
-		memset(_pageBuffers[i], 0, kVideoWidth * kVideoHeight);
+		memset(_pageBuffers[i], 0, kPageBufferSize);
 	}
 	memset(_paletteBuffer, 0, sizeof(_paletteBuffer));
+	_paletteChanged = true;
 	_currentPageBuffer = 0;
 	int currentFrameBlock = 0;
 
@@ -477,14 +481,16 @@ void PafPlayer::mainLoop() {
 		prevAudioCb = g_system->setAudioCallback(audioCb);
 	}
 
-	const uint32_t framesPerSec = (_demuxAudioFrameBlocks != 0) ? kFramesPerSec : 15;
-	uint32_t frameTime = g_system->getTimeStamp() + 1000 / framesPerSec;
-	
-	for (int i = 0; i < (int)_pafHdr.framesCount; ++i) {
+	// keep original frame rate for audio
+	const uint32_t frameMs = (_demuxAudioFrameBlocks != 0) ? _pafHdr.frameDuration : (_pafHdr.frameDuration * _frameMs / kFrameDuration);
+	uint32_t frameTime = g_system->getTimeStamp() + frameMs;
+
+	uint32_t blocksCountForFrame = _pafHdr.preloadFrameBlocksCount;
+		for (int i = 0; i < (int)_pafHdr.framesCount; ++i) {
 		// read buffering blocks
-		uint32_t blocksCountForFrame = (i == 0) ? _pafHdr.preloadFrameBlocksCount : _pafHdr.frameBlocksCountTable[i - 1];
-		#ifdef _3DS
-		printf("frametime= %lu \n",_pafHdr.readBufferSize);
+		blocksCountForFrame += _pafHdr.frameBlocksCountTable[i];
+#ifdef __3DS__
+//		printf("frametime= %lu \n",_pafHdr.readBufferSize);
 		int blocksize = _pafHdr.readBufferSize*blocksCountForFrame;
 		uint8_t* betterbuffer = (uint8_t*)malloc(blocksize);
 		_file.read(betterbuffer,blocksize);
@@ -504,8 +510,8 @@ void PafPlayer::mainLoop() {
 			--blocksCountForFrame;
 			++counter;
 		}
-		#else
-		printf("frametime= %lu \n",_pafHdr.readBufferSize);
+#else
+
 		while (blocksCountForFrame != 0) {
 			_file.read(_bufferBlock, _pafHdr.readBufferSize);
 			const uint32_t dstOffset = _pafHdr.frameBlocksOffsetTable[currentFrameBlock] & ~(1 << 31);
@@ -520,29 +526,39 @@ void PafPlayer::mainLoop() {
 			++currentFrameBlock;
 			--blocksCountForFrame;
 		}
-		#endif
-
+#endif
 		// decode video data
 		decodeVideoFrame(_demuxVideoFrameBlocks + _pafHdr.framesOffsetTable[i]);
-		g_system->setPalette(_paletteBuffer, 256, 6);
-		g_system->copyRect(0, 0, kVideoWidth, kVideoHeight, _pageBuffers[_currentPageBuffer], kVideoWidth);
+
+		if (_pafCb.frameProc) {
+			_pafCb.frameProc(_pafCb.userdata, i, _pageBuffers[_currentPageBuffer]);
+		} else {
+			g_system->copyRect(0, 0, kVideoWidth, kVideoHeight, _pageBuffers[_currentPageBuffer], kVideoWidth);
+		}
+		if (_paletteChanged) {
+			_paletteChanged = false;
+			g_system->setPalette(_paletteBuffer, 256, 6);
+		}
 		g_system->updateScreen(false);
 		g_system->processEvents();
 		if (g_system->inp.keyPressed(SYS_INP_ESC) || g_system->inp.skip) {
 			break;
 		}
-		#ifdef _3DS
+#ifdef __3DS__
 		free(betterbuffer);
-		#endif
-
+#endif
 		const int delay = MAX<int>(10, frameTime - g_system->getTimeStamp());
 		g_system->sleep(delay);
-		frameTime = g_system->getTimeStamp() + 1000 / framesPerSec;
+		frameTime = g_system->getTimeStamp() + frameMs;
 
 		// set next decoding video page
 		++_currentPageBuffer;
 		_currentPageBuffer &= 3;
-		
+	}
+
+
+	if (_pafCb.endProc) {
+		_pafCb.endProc(_pafCb.userdata);
 	}
 
 	// restore audio callback
@@ -551,5 +567,12 @@ void PafPlayer::mainLoop() {
 	}
 
 	unload();
+}
 
+void PafPlayer::setCallback(const PafCallback *pafCb) {
+	if (pafCb) {
+		_pafCb = *pafCb;
+	} else {
+		memset(&_pafCb, 0, sizeof(_pafCb));
+	}
 }
