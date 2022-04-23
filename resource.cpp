@@ -1232,51 +1232,38 @@ void Resource::loadSssPcm(File *fp, SssPcm *pcm) {
 			}
 		}
 	}
-	
-	
-	
-	
-	
-	
-	
-	
-	
 #else
-		pcm->ptr = p;
-		if (_isPsx) {
-			uint8_t buf[512*(pcm->strideCount)];
-			fp->read(buf, sizeof(buf));
-			
-			for (int i = 0; i < pcm->strideCount; ++i) {
-				_pcmL1 = _pcmL0 = 0;
-				for (int j = 0; j < 512; j += 16) {
-					decodeSssSpuAdpcmUnit(&buf[j*(pcm->strideCount)] + j, p);
-					p += 56;
-				}
-			}
-			return;
-		}
-		if (fp != _datFile) {
-			fp->seek(pcm->offset, SEEK_SET);
-		}
-		
-		
-		int bytesize = pcm->strideSize - (256 * sizeof(int16_t));
+	pcm->ptr = p;
+	if (_isPsx) {
+		uint8_t buf[512*(pcm->strideCount)];
+		fp->read(buf, sizeof(buf));
+
 		for (int i = 0; i < pcm->strideCount; ++i) {
-			int counter = 0;
-			uint8_t samples[256 * sizeof(int16_t)+bytesize];
-			//uint8_t bytes[bytesize];
-			fp->read(samples, sizeof(samples));
-			//fp->read(bytes, sizeof(bytes));
-			for (unsigned int j = 256 * sizeof(int16_t); j < pcm->strideSize; ++j) {
-				*p++ = READ_LE_UINT16(samples + samples[256 * sizeof(int16_t)+counter] * sizeof(int16_t));
-				++counter;
+			_pcmL1 = _pcmL0 = 0;
+			for (int j = 0; j < 512; j += 16) {
+				decodeSssSpuAdpcmUnit(&buf[j*(pcm->strideCount)] + j, p);
+				p += 56;
 			}
 		}
+		return;
+	}
+	if (fp != _datFile) {
+		fp->seek(pcm->offset, SEEK_SET);
+	}
+
+	int bytesize = pcm->strideSize - (256 * sizeof(int16_t));
+	for (int i = 0; i < pcm->strideCount; ++i) {
+		int counter = 0;
+		uint8_t samples[256 * sizeof(int16_t)+bytesize];
+		//uint8_t bytes[bytesize];
+		fp->read(samples, sizeof(samples));
+		//fp->read(bytes, sizeof(bytes));
+		for (unsigned int j = 256 * sizeof(int16_t); j < pcm->strideSize; ++j) {
+			*p++ = READ_LE_UINT16(samples + samples[256 * sizeof(int16_t)+counter] * sizeof(int16_t));
+			++counter;
+		}
+	}
 #endif
-	
-	
-	
 	assert((p - pcm->ptr) * sizeof(int16_t) == decompressedSize);
 }
 

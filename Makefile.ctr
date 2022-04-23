@@ -38,9 +38,9 @@ include $(DEVKITARM)/3ds_rules
 
 TARGET      := hode
 BUILD       := build
-SOURCES     := . 3p/inih 3p/inih/ini 3p/libxbr-standalone
+SOURCES     := .
 DATA        := data
-INCLUDES    := . 3p/inih 3p/inih/ini 3p/libxbr-standalone 3p/console
+INCLUDES    := .
 GRAPHICS    := gfx
 GFXBUILD    := $(BUILD)
 #ROMFS       := res/ctr/romfs

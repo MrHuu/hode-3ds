@@ -486,7 +486,7 @@ void PafPlayer::mainLoop() {
 	uint32_t frameTime = g_system->getTimeStamp() + frameMs;
 
 	uint32_t blocksCountForFrame = _pafHdr.preloadFrameBlocksCount;
-		for (int i = 0; i < (int)_pafHdr.framesCount; ++i) {
+	for (int i = 0; i < (int)_pafHdr.framesCount; ++i) {
 		// read buffering blocks
 		blocksCountForFrame += _pafHdr.frameBlocksCountTable[i];
 #ifdef __3DS__
@@ -555,7 +555,6 @@ void PafPlayer::mainLoop() {
 		++_currentPageBuffer;
 		_currentPageBuffer &= 3;
 	}
-
 
 	if (_pafCb.endProc) {
 		_pafCb.endProc(_pafCb.userdata);

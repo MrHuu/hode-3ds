@@ -340,5 +340,11 @@ int main(int argc, char *argv[]) {
 #ifdef __SWITCH__
 	socketExit();
 #endif
+#ifdef __3DS__
+#ifdef CTR_ROMFS
+	romfsExit();
+#endif
+	gfxExit();
+#endif
 	return 0;
 }

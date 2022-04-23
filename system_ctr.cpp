@@ -37,22 +37,13 @@ struct System_CTR : System {
 	};
 
 	uint8_t *_offscreenLut;
-#ifdef __3DS__
+
 	SDL_Surface *screen;
 	SDL_Surface *_texture;
 	SDL_Surface *_backgroundTexture; // YUV (PSX)
 	SDL_Surface *_widescreenTexture;
-		int _texW, _texH, _texScale;
-#else
-	SDL_Window *_window;
-	SDL_Renderer *_renderer;
-	SDL_Texture *_texture;
-	SDL_Texture *_backgroundTexture; // YUV (PSX)
 	int _texW, _texH, _texScale;
-	SDL_PixelFormat *_fmt;
-		SDL_Texture *_widescreenTexture;
-			SDL_GameController *_controller;
-#endif
+
 	uint32_t _pal[256];
 	int _screenW, _screenH;
 	int _shakeDx, _shakeDy;
@@ -98,12 +89,7 @@ static System_CTR system_ctr;
 System *const g_system = &system_ctr;
 
 void System_printLog(FILE *fp, const char *s) {
-	if (fp == stderr) {
-		fprintf(stderr, "WARNING: %s\n", s);
-	} else {
-		fprintf(fp, "%s\n", s);
-	}
-	printf("error");
+	printf("WARNING: %s\n", s);
 }
 
 void System_fatalError(const char *s) {
@@ -115,7 +101,9 @@ void System_fatalError(const char *s) {
 	errorInit(&error, ERROR_TEXT, CFG_LANGUAGE_EN);
 	errorText(&error, s);
 	errorDisp(&error);
-
+#ifdef CTR_ROMFS
+	romfsExit();
+#endif
 	gfxExit();
 	exit(-1);
 }
@@ -336,9 +324,7 @@ void System_CTR::copyRect(int x, int y, int w, int h, const uint8_t *buf, int pi
 	}
 }
 
-void System_CTR::copyYuv(int w, int h, const uint8_t *y, int ypitch, const uint8_t *u, int upitch, const uint8_t *v, int vpitch) {
-
-}
+void System_CTR::copyYuv(int w, int h, const uint8_t *y, int ypitch, const uint8_t *u, int upitch, const uint8_t *v, int vpitch) {}
 
 void System_CTR::fillRect(int x, int y, int w, int h, uint8_t color) {
 	assert(x >= 0 && x + w <= _screenW && y >= 0 && y + h <= _screenH);
@@ -474,35 +460,35 @@ void System_CTR::processEvents() {
 			if (_joystick) {
 				const bool pressed = (ev.jbutton.state == SDL_PRESSED);
 				switch (ev.jbutton.button) {
-				case 0:
+				case 4: //Y
 					if (pressed) {
 						pad.mask |= SYS_INP_RUN;
 					} else {
 						pad.mask &= ~SYS_INP_RUN;
 					}
 					break;
-				case 1:
+				case 2: //B
 					if (pressed) {
 						pad.mask |= SYS_INP_JUMP;
 					} else {
 						pad.mask &= ~SYS_INP_JUMP;
 					}
 					break;
-				case 2:
+				case 1: //A
 					if (pressed) {
 						pad.mask |= SYS_INP_SHOOT;
 					} else {
 						pad.mask &= ~SYS_INP_SHOOT;
 					}
 					break;
-				case 3:
+				case 3: //X
 					if (pressed) {
 						pad.mask |= SYS_INP_SHOOT | SYS_INP_RUN;
 					} else {
 						pad.mask &= ~(SYS_INP_SHOOT | SYS_INP_RUN);
 					}
 					break;
-				case 5:
+				case 7: //BACK
 					if (pressed) {
 						pad.mask |= SYS_INP_ESC;
 					} else {
@@ -592,79 +578,12 @@ void System_CTR::setupDefaultKeyMappings() {
 }
 
 void System_CTR::updateKeys(PlayerInput *inp) {
-#ifndef __3DS__
-	inp->prevMask = inp->mask;
-	inp->mask = 0;
-	const uint8_t *keyState = SDL_GetKeyboardState(NULL);
-	for (int i = 0; i < _keyMappingsCount; ++i) {
-		const KeyMapping *keyMap = &_keyMappings[i];
-		if (keyState[keyMap->keyCode]) {
-			inp->mask |= keyMap->mask;
-		}
-	}
-	inp->mask |= pad.mask;
-#else
 	inp->prevMask = inp->mask;
 	inp->mask = 0;
 	inp->mask |= pad.mask;
-#endif
 }
 
 void System_CTR::prepareScaledGfx(const char *caption, bool fullscreen, bool widescreen, bool yuv) {
-#ifndef __3DS__
-	const int w = _screenW * _scalerMultiplier;
-	const int h = _screenH * _scalerMultiplier;
-	if (_scalerMultiplier > 1) {
-		if (_scalerMultiplier < _scaler->factorMin) {
-			_scalerMultiplier = _scaler->factorMin;
-		} else if (_scalerMultiplier > _scaler->factorMax) {
-			_scalerMultiplier = _scaler->factorMax;
-		}
-		_scalerProc = _scaler->scale[_scalerMultiplier - 2];
-	}
-	if (_scalerProc) {
-		_texW = w;
-		_texH = h;
-		_texScale = _scalerMultiplier;
-	} else {
-		_texW = _screenW;
-		_texH = _screenH;
-		_texScale = 1;
-	}
-	const int windowW = widescreen ? h * 16 / 9 : w;
-	const int windowH = h;
-	const int flags = fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : SDL_WINDOW_RESIZABLE;
-	_window = SDL_CreateWindow(caption, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, windowW, windowH, flags);
-	SDL_Surface *icon = SDL_LoadBMP(kIconBmp);
-	if (icon) {
-		SDL_SetWindowIcon(_window, icon);
-		SDL_FreeSurface(icon);
-	}
-	_renderer = SDL_CreateRenderer(_window, -1, SDL_RENDERER_ACCELERATED | (yuv ? SDL_RENDERER_TARGETTEXTURE : 0));
-	SDL_RenderSetLogicalSize(_renderer, windowW, windowH);
-	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, (_scaler == &scaler_nearest) ? "0" : "1");
-
-	const int pixelFormat = yuv ? SDL_PIXELFORMAT_RGBA8888 : SDL_PIXELFORMAT_RGB888;
-	_texture = SDL_CreateTexture(_renderer, pixelFormat, SDL_TEXTUREACCESS_STREAMING, _texW, _texH);
-	if (widescreen) {
-		if (yuv) {
-			_widescreenTexture = SDL_CreateTexture(_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_TARGET, 16, 16);
-		} else {
-			_widescreenTexture = SDL_CreateTexture(_renderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STREAMING, _screenW, _screenH);
-		}
-	} else {
-		_widescreenTexture = 0;
-	}
-	if (yuv) {
-		_backgroundTexture = SDL_CreateTexture(_renderer, SDL_PIXELFORMAT_YV12, SDL_TEXTUREACCESS_STREAMING, _screenW, _screenH);
-		// the game texture is drawn on top
-		SDL_SetTextureBlendMode(_texture, SDL_BLENDMODE_BLEND);
-	} else {
-		_backgroundTexture = 0;
-	}
-	_fmt = SDL_AllocFormat(pixelFormat);
-#else
-
 	widescreen = false;
 	_texW = _screenW;
 	_texH = _screenH;
@@ -678,6 +597,4 @@ void System_CTR::prepareScaledGfx(const char *caption, bool fullscreen, bool wid
 	} else {
 		_widescreenTexture = 0;
 	}
-
-#endif
 }
